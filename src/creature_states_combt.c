@@ -2817,6 +2817,32 @@ TbBool creature_look_for_combat(struct Thing *creatng)
     return true;
 }
 
+TbBool creature_look_for_destructable_object_combat(struct Thing* thing)
+{
+    JUSTMSG("TESTLOG: creature_look_for_destructable_object_combat");
+    SYNCDBG(19, "Starting for %s index %d", thing_model_name(thing), (int)thing->index);
+    TRACE_THING(thing);
+
+    struct Thing* enmtng;
+    // If already fighting dungeon heart, skip the rest
+    if (get_creature_state_besides_interruptions(thing) == CrSt_CreatureObjectCombat) {
+        struct CreatureControl* cctrl = creature_control_get_from_thing(thing);
+        enmtng = thing_get(cctrl->combat.battle_enemy_idx);
+        
+        if (!thing_is_dungeon_heart(enmtng)) {
+            return false;
+        }
+    }
+    enmtng = get_enemy_object_creature_can_see(thing);
+    if (thing_is_invalid(enmtng) || !(creature_can_navigate_to(thing, &enmtng->mappos, NavRtF_Default)))
+    {
+        return false;
+    }
+    TRACE_THING(enmtng);
+    set_creature_object_combat(thing, enmtng);
+    return true;
+}
+
 TbBool creature_look_for_enemy_heart_combat(struct Thing *thing)
 {
     SYNCDBG(19,"Starting for %s index %d",thing_model_name(thing),(int)thing->index);
@@ -2833,6 +2859,12 @@ TbBool creature_look_for_enemy_heart_combat(struct Thing *thing)
             return false;
         }
     }
+    //struct Coord3d pos;
+    //pos.x.val = thing->mappos.x.val;
+    //pos.y.val = thing->mappos.y.val;
+    //pos.z.val = thing->mappos.z.val;
+    //struct PlayerInfo* player = get_player(0);
+    //heartng = get_nearest_thing_of_class_and_model_owned_by(pos.x.val, pos.y.val, -1, TCls_Object, -1);; //
     heartng = get_enemy_soul_container_creature_can_see(thing);
     if (thing_is_invalid(heartng) || !(creature_can_navigate_to(thing,&heartng->mappos, NavRtF_Default)))
     {

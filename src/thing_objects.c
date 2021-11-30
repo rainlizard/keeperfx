@@ -675,28 +675,85 @@ TbBool thing_is_lair_totem(const struct Thing *thing)
     return (objst->genre == OCtg_LairTotem);
 }
 
+TbBool object_is_decoration(const struct Thing* thing)
+{
+    if (!thing_is_object(thing))
+        return false;
+    struct ObjectConfigStats* objst = get_object_model_stats(thing->model);
+    return (objst->genre == OCtg_Decoration);
+}
+
 TbBool object_is_hero_gate(const struct Thing *thing)
 {
+  if (!thing_is_object(thing))
+      return false;
   return (thing->model == 49);
+}
+
+
+struct Thing* get_object_for_position(MapSubtlCoord stl_x, MapSubtlCoord stl_y)
+{
+    struct Map* mapblk = get_map_block_at(stl_x, stl_y);
+    unsigned long k = 0;
+    long i = get_mapwho_thing_index(mapblk);
+    while (i != 0)
+    {
+        struct Thing* thing = thing_get(i);
+        TRACE_THING(thing);
+        if (thing_is_invalid(thing))
+        {
+            ERRORLOG("Jump to invalid thing detected");
+            break;
+        }
+        i = thing->next_on_mapblk;
+        // Per thing code start
+        if (thing->class_id == TCls_Object) {
+            return thing;
+        }
+        // Per thing code end
+        k++;
+        if (k > THINGS_COUNT)
+        {
+            ERRORLOG("Infinite loop detected when sweeping things list");
+            break_mapwho_infinite_chain(mapblk);
+            break;
+        }
+    }
+    return INVALID_THING;
+}
+
+TbBool object_is_destructable(const struct Thing* thing)
+{
+    if (!thing_is_object(thing))
+        return false;
+    return (thing->model == 1); //todo: Replace with destructable property
 }
 
 TbBool object_is_infant_food(const struct Thing *thing)
 {
+    if (!thing_is_object(thing))
+        return false;
   return (thing->model == food_grow_objects[0]) || (thing->model == food_grow_objects[1]) || (thing->model == food_grow_objects[2]);
 }
 
 TbBool object_is_growing_food(const struct Thing *thing)
 {
+    if (!thing_is_object(thing))
+        return false;
   return (thing->model == 9);
 }
 
 TbBool object_is_mature_food(const struct Thing *thing)
 {
+    if (!thing_is_object(thing))
+        return false;
   return (thing->model == 10);
 }
 
 TbBool object_is_gold(const struct Thing *thing)
 {
+    if (!thing_is_object(thing))
+        return false;
     return object_is_gold_pile(thing) || object_is_gold_hoard(thing);
 }
 
@@ -708,6 +765,8 @@ TbBool object_is_gold(const struct Thing *thing)
  */
 TbBool object_is_gold_hoard(const struct Thing *thing)
 {
+    if (!thing_is_object(thing))
+        return false;
     struct ObjectConfigStats* objst = get_object_model_stats(thing->model);
     return (objst->genre == OCtg_GoldHoard);
 }
@@ -731,6 +790,8 @@ TbBool object_is_gold_pile(const struct Thing *thing)
 
 TbBool object_is_gold_laying_on_ground(const struct Thing *thing)
 {
+    if (!thing_is_object(thing))
+        return false;
     return (thing->model == 43);
 }
 
@@ -741,6 +802,8 @@ TbBool object_is_gold_laying_on_ground(const struct Thing *thing)
  */
 TbBool object_is_guard_flag(const struct Thing *thing)
 {
+    if (!thing_is_object(thing))
+        return false;
     switch (thing->model)
     {
       case 115:

@@ -569,6 +569,10 @@ long shot_kill_object(struct Thing *shotng, struct Thing *target)
     {
         destroy_food(target);
     } else
+    if (object_is_destructable(target))
+    {
+        delete_thing_structure(target, 0); //todo replace with destroy_object(target);
+    } else
     {
         WARNLOG("Killing %s by %s is not supported",thing_model_name(target),thing_model_name(shotng));
     }

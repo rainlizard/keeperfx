@@ -2887,7 +2887,7 @@ unsigned long hit_type_to_hit_targets(long hit_type)
             HitTF_EnemySoulContainer|HitTF_AlliedSoulContainer|HitTF_OwnedSoulContainer|
             HitTF_AnyWorkshopBoxes|HitTF_AnySpellbooks|HitTF_AnyDnSpecialBoxes|
             HitTF_EnemyShotsCollide|HitTF_AlliedShotsCollide|HitTF_OwnedShotsCollide|
-            HitTF_AnyFoodObjects|HitTF_AnyGoldPiles;
+            HitTF_AnyFoodObjects|HitTF_AnyGoldPiles|HitTF_AnyDecorations;
     case THit_CrtrsNObjcts:
         return HitTF_EnemyCreatures|HitTF_AlliedCreatures|HitTF_OwnedCreatures|HitTF_ArmourAffctdCreatrs|HitTF_PreventDmgCreatrs|
             HitTF_EnemySoulContainer|HitTF_AlliedSoulContainer|HitTF_OwnedSoulContainer|
@@ -3001,11 +3001,10 @@ TbBool thing_is_shootable(const struct Thing *thing, PlayerNumber shot_owner, Hi
         {
             return ((hit_targets & HitTF_AnyGoldPiles) != 0);
         }
-        //TODO implement hitting decorations flag
-        /*if (object_is_decoration(thing))
+        if (object_is_decoration(thing))
         {
             return ((hit_targets & HitTF_AnyDecorations) != 0);
-        }*/
+        }
         return false;
     }
     if (thing_is_deployed_door(thing))

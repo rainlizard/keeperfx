@@ -83,6 +83,7 @@ CrInstance get_best_quick_range_instance_to_use(const struct Thing *thing);
 
 TbBool creature_will_do_combat(const struct Thing *thing);
 TbBool creature_look_for_combat(struct Thing *creatng);
+TbBool creature_look_for_destructable_object_combat(struct Thing* thing);
 TbBool creature_look_for_enemy_heart_combat(struct Thing *thing);
 TbBool creature_look_for_enemy_door_combat(struct Thing *thing);
 

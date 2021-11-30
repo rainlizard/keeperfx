@@ -1303,6 +1303,18 @@ TbBool explosion_affecting_thing(struct Thing *tngsrc, struct Thing *tngdst, con
                     affected = true;
                 }
             }
+            if (tngdst->class_id == TCls_Object)
+            {
+                HitPoints damage = get_radially_decaying_value(max_damage, max_dist / 4, 3 * max_dist / 4, distance) + 1;
+                SYNCDBG(7, "Causing %d damage to %s at distance %d", (int)damage, thing_model_name(tngdst), (int)distance);
+                apply_damage_to_thing(tngdst, damage, damage_type, -1);
+                affected = true;
+                if (tngdst->health < 0)
+                {
+                    destroy_object(tngdst);
+                    affected = true;
+                }
+            }
             if (thing_is_dungeon_heart(tngdst))
             {
                 HitPoints damage = get_radially_decaying_value(max_damage, max_dist / 4, 3 * max_dist / 4, distance) + 1;

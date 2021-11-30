@@ -1484,6 +1484,10 @@ short creature_being_dropped(struct Thing *creatng)
                 SYNCDBG(3,"The %s index %d owner %d found heart combat at (%d,%d)",thing_model_name(creatng),(int)creatng->index,(int)creatng->owner,(int)stl_x,(int)stl_y);
                 return 2;
             }
+            if (creature_look_for_destructable_object_combat(creatng)) {
+                SYNCDBG(3, "The %s index %d owner %d found object combat at (%d,%d)", thing_model_name(creatng), (int)creatng->index, (int)creatng->owner, (int)stl_x, (int)stl_y);
+                return 2;
+            }
             if (creature_look_for_enemy_door_combat(creatng)) {
                 SYNCDBG(3,"The %s index %d owner %d found enemy combat at (%d,%d)",thing_model_name(creatng),(int)creatng->index,(int)creatng->owner,(int)stl_x,(int)stl_y);
                 return 2;

@@ -64,6 +64,7 @@
 #include "light_data.h"
 #include "room_list.h"
 #include "room_jobs.h"
+#include "map_data.h"
 #include "map_utils.h"
 #include "map_blocks.h"
 #include "gui_topmsg.h"
@@ -481,6 +482,50 @@ long creature_available_for_combat_this_turn(struct Thing *creatng)
     }
     CrtrStateId i = get_creature_state_besides_interruptions(creatng);
     return can_change_from_state_to(creatng, i, CrSt_CreatureInCombat);
+}
+
+
+struct Thing* get_object_creature_can_see(struct Thing* creatng, PlayerNumber object_owner)
+{
+    JUSTMSG("TESTLOG: get object creature can see");
+    long m = CREATURE_RANDOM(thing, SMALL_AROUND_SLAB_LENGTH);
+    for (long n = 0; n < SMALL_AROUND_SLAB_LENGTH; n++)
+    {
+        MapSlabCoord slb_x = subtile_slab_fast(creatng->mappos.x.stl.num) + (long)small_around[m].delta_x;
+        MapSlabCoord slb_y = subtile_slab_fast(creatng->mappos.y.stl.num) + (long)small_around[m].delta_y;
+        struct Thing* objtng = get_object_for_position(slab_subtile_center(slb_x), slab_subtile_center(slb_y));
+        if (!thing_is_invalid(objtng))
+        {
+            if (objtng->owner == object_owner)
+            {
+                return objtng;
+            }
+        }
+        m = (m + 1) % SMALL_AROUND_SLAB_LENGTH;
+    }
+    return INVALID_THING;
+}
+
+struct Thing* get_enemy_object_creature_can_see(struct Thing* creatng)
+{
+    JUSTMSG("TESTLOG: get enemy object creature can see");
+    SYNCDBG(17, "Starting");
+
+    assert(DUNGEONS_COUNT == PLAYERS_COUNT);
+
+    for (PlayerNumber enemy_idx = 0; enemy_idx < DUNGEONS_COUNT; enemy_idx++)
+    {
+        if (players_are_enemies(creatng->owner, enemy_idx))
+        {
+            struct Thing* objtng = get_object_creature_can_see(creatng, enemy_idx);
+            if (!thing_is_invalid(objtng))
+            {
+                return objtng;
+            }
+        }
+    }
+
+    return INVALID_THING;
 }
 
 struct Thing *get_players_soul_container_creature_can_see(struct Thing *creatng, PlayerNumber heart_owner)
@@ -1671,6 +1716,56 @@ void update_creature_count(struct Thing *creatng)
     {
         dungeon->guijob_angry_creatrs_count[creatng->model][job_idx]++;
     }
+}
+
+
+struct Thing* find_destructible_object_laying_on_mapblk(struct Map* mapblk)
+{
+    unsigned long k = 0;
+    long i = get_mapwho_thing_index(mapblk);
+    while (i != 0)
+    {
+        struct Thing* thing = thing_get(i);
+        if (thing_is_invalid(thing))
+        {
+            WARNLOG("Jump out of things array");
+            break;
+        }
+        i = thing->next_on_mapblk;
+        if (thing->class_id == TCls_Object)
+        {
+            if (thing->model == 1) //todo add destructible class
+                return thing;
+        }
+        k++;
+        if (k > THINGS_COUNT)
+        {
+            ERRORLOG("Infinite loop detected when sweeping things list");
+            break_mapwho_infinite_chain(mapblk);
+            break;
+        }
+    }
+    return INVALID_THING;
+}
+
+struct Thing* find_destructible_object_laying_around_thing(struct Thing* creatng)
+{
+    for (long k = 0; k < AROUND_TILES_COUNT; k++)
+    {
+        long stl_x = creatng->mappos.x.stl.num + around[k].delta_x;
+        long stl_y = creatng->mappos.y.stl.num + around[k].delta_y;
+        struct Map* mapblk = get_map_block_at(stl_x, stl_y);
+        if (!map_block_invalid(mapblk))
+        {
+            if ((mapblk->flags & SlbAtFlg_Blocking) == 0)
+            {
+                struct Thing* thing = find_destructible_object_laying_on_mapblk(mapblk);
+                if (!thing_is_invalid(thing))
+                    return thing;
+            }
+        }
+    }
+    return INVALID_THING;
 }
 
 struct Thing *find_gold_pile_or_chicken_laying_on_mapblk(struct Map *mapblk)

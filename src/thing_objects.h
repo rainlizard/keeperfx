@@ -112,6 +112,8 @@ TbBool thing_is_object(const struct Thing *thing);
 void change_object_owner(struct Thing *objtng, PlayerNumber nowner);
 void destroy_food(struct Thing *foodtng);
 
+struct Thing* get_object_for_position(MapSubtlCoord stl_x, MapSubtlCoord stl_y); //todo move to filters?
+
 struct Objects *get_objects_data_for_thing(struct Thing *thing);
 struct Objects *get_objects_data(unsigned int tmodel);
 struct Thing *get_spellbook_at_position(MapSubtlCoord stl_x, MapSubtlCoord stl_y);
@@ -136,6 +138,8 @@ TbBool object_is_gold_pile(const struct Thing *thing);
 TbBool object_is_gold_hoard(const struct Thing *thing);
 TbBool object_is_gold_laying_on_ground(const struct Thing *thing);
 TbBool object_is_guard_flag(const struct Thing *thing);
+TbBool object_is_decoration(const struct Thing* thing);
+TbBool object_is_destructable(const struct Thing* thing);
 TbBool thing_is_gold_hoard(const struct Thing *thing);
 TbBool thing_is_spellbook(const struct Thing *thing);
 TbBool thing_is_lair_totem(const struct Thing *thing);
