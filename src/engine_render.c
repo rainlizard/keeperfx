@@ -137,6 +137,14 @@ unsigned char const height_masks[] = {
   8, 8, 8, 8, 8, 8, 8, 8,
 };
 
+int triangles_drawn = 0;
+
+struct MinMax minmaxs[MINMAX_LENGTH];
+struct EngineCol ecs1[];
+struct EngineCol ecs2[];
+struct EngineCol *front_ec;
+struct EngineCol *back_ec;
+
 static int water_wibble_angle = 0;
 //static unsigned char temp_cluedo_mode;
 static unsigned long render_problems;
@@ -282,7 +290,7 @@ void update_engine_settings(struct PlayerInfo *player)
         break;
     }
     me_pointed_at = NULL;
-    me_distance = 100000000;
+    me_distance = 200000000;
     max_i_can_see = get_creature_can_see_subtiles();
     if (lens_mode != 0)
       temp_cluedo_mode = 0;
@@ -501,352 +509,352 @@ struct WibbleTable *get_wibble_from_table(long table_index, MapSubtlCoord stl_x,
 
 void fill_in_points_perspective(long bstl_x, long bstl_y, struct MinMax *mm)
 {
-    //_DK_fill_in_points_perspective(bstl_x, bstl_y, mm); return;
-    if ((bstl_y < 0) || (bstl_y > map_subtiles_y-1)) {
-        return;
-    }
-    long mmin;
-    long mmax;
-    mmin = min(mm[0].min,mm[1].min);
-    mmax = max(mm[0].max,mm[1].max);
-    if (mmin + bstl_x < 1)
-      mmin = 1 - bstl_x;
-    if (mmax + bstl_x > map_subtiles_y)
-      mmax = map_subtiles_y - bstl_x;
-    MapSubtlCoord stl_x;
-    MapSubtlCoord stl_y;
-    stl_y = bstl_y;
-    stl_x = mmin + bstl_x;
-    apos += subtile_coord(mmin,0);
-    struct EngineCol *ecol;
-    ecol = &front_ec[mmin + 31];
-    unsigned long mask_unrev;
-    {
-        struct Column *col;
-        col = get_column(game.unrevealed_column_idx);
-        mask_unrev = col->solidmask + 65536;
-    }
-    struct Map *mapblk;
-    struct Column *col;
-    unsigned long pfulmask_or;
-    unsigned long pfulmask_and;
-    {
-        unsigned long mask_cur;
-        unsigned long mask_yp;
-        mask_cur = mask_unrev;
-        mask_yp = mask_unrev;
-        mapblk = get_map_block_at(stl_x-1, stl_y+1);
-        if (map_block_revealed_bit(mapblk, player_bit)) {
-            col = get_map_column(mapblk);
-            mask_cur = col->solidmask;
-        }
-        mapblk = get_map_block_at(stl_x-1, stl_y);
-        if (map_block_revealed_bit(mapblk, player_bit)) {
-            col = get_map_column(mapblk);
-            mask_yp = col->solidmask;
-        }
-        pfulmask_or = mask_cur | mask_yp;
-        pfulmask_and = mask_cur & mask_yp;
-    }
+    // //_DK_fill_in_points_perspective(bstl_x, bstl_y, mm); return;
+    // if ((bstl_y < 0) || (bstl_y > map_subtiles_y-1)) {
+    //     return;
+    // }
+    // long mmin;
+    // long mmax;
+    // mmin = min(mm[0].min,mm[1].min);
+    // mmax = max(mm[0].max,mm[1].max);
+    // if (mmin + bstl_x < 1)
+    //   mmin = 1 - bstl_x;
+    // if (mmax + bstl_x > map_subtiles_y)
+    //   mmax = map_subtiles_y - bstl_x;
+    // MapSubtlCoord stl_x;
+    // MapSubtlCoord stl_y;
+    // stl_y = bstl_y;
+    // stl_x = mmin + bstl_x;
+    // apos += subtile_coord(mmin,0);
+    // struct EngineCol *ecol;
+    // ecol = &front_ec[mmin + 31];
+    // unsigned long mask_unrev;
+    // {
+    //     struct Column *col;
+    //     col = get_column(game.unrevealed_column_idx);
+    //     mask_unrev = col->solidmask + 65536;
+    // }
+    // struct Map *mapblk;
+    // struct Column *col;
+    // unsigned long pfulmask_or;
+    // unsigned long pfulmask_and;
+    // {
+    //     unsigned long mask_cur;
+    //     unsigned long mask_yp;
+    //     mask_cur = mask_unrev;
+    //     mask_yp = mask_unrev;
+    //     mapblk = get_map_block_at(stl_x-1, stl_y+1);
+    //     if (map_block_revealed_bit(mapblk, player_bit)) {
+    //         col = get_map_column(mapblk);
+    //         mask_cur = col->solidmask;
+    //     }
+    //     mapblk = get_map_block_at(stl_x-1, stl_y);
+    //     if (map_block_revealed_bit(mapblk, player_bit)) {
+    //         col = get_map_column(mapblk);
+    //         mask_yp = col->solidmask;
+    //     }
+    //     pfulmask_or = mask_cur | mask_yp;
+    //     pfulmask_and = mask_cur & mask_yp;
+    // }
 
-    int wib_x;
-    int wib_y;
-    int wib_v;
-    wib_y = (stl_y + 1) & 3;
-    int idxx;
-    for (idxx=mmax-mmin+1; idxx > 0; idxx--)
-    {
-        unsigned long mask_cur;
-        unsigned long mask_yp;
-        mask_cur = mask_unrev;
-        mask_yp = mask_unrev;
-        mapblk = get_map_block_at(stl_x, stl_y+1);
-        wib_v = get_mapblk_wibble_value(mapblk);
-        if (map_block_revealed_bit(mapblk, player_bit)) {
-            col = get_map_column(mapblk);
-            mask_cur = col->solidmask;
-        }
-        mapblk = get_map_block_at(stl_x, stl_y);
-        if (map_block_revealed_bit(mapblk, player_bit)) {
-            col = get_map_column(mapblk);
-            mask_yp = col->solidmask;
-        }
-        unsigned long nfulmask_or;
-        unsigned long nfulmask_and;
-        nfulmask_or = mask_cur | mask_yp;
-        nfulmask_and = mask_cur & mask_yp;
-        unsigned long fulmask_or;
-        unsigned long fulmask_and;
-        fulmask_or = nfulmask_or | pfulmask_or;
-        fulmask_and = nfulmask_and & pfulmask_and;
-        pfulmask_or = nfulmask_or;
-        pfulmask_and = nfulmask_and;
-        int lightness;
-        lightness = 0;
-        if ((fulmask_or & 0x10000) == 0)
-            lightness = game.lish.subtile_lightness[get_subtile_number(stl_x, stl_y+1)];
-        long hmin;
-        long hmax;
-        hmax = height_masks[fulmask_or & 0xff];
-        hmin = _DK_floor_height[fulmask_and & 0xff];
-        struct EngineCoord *ecord;
-        ecord = &ecol->cors[hmin];
-        long hpos;
-        hpos = subtile_coord(hmin,0) - view_alt;
-        wib_x = stl_x & 3;
-        struct WibbleTable *wibl;
-        wibl = get_wibble_from_table(32 * wib_v + wib_x + (wib_y << 2), stl_x, stl_y);
-        int idxh;
-        for (idxh = hmax-hmin+1; idxh > 0; idxh--)
-        {
-            ecord->x = apos + wibl->field_0;
-            ecord->y = hpos + wibl->field_4;
-            ecord->z = bpos + wibl->field_8;
-            ecord->field_8 = 0;
-            lightness += wibl->field_C;
-            if (lightness < 0)
-                lightness = 0;
-            if (lightness > 16128)
-                lightness = 16128;
-            ecord->field_A = lightness;
-            wibl += 2;
-            hpos += COORD_PER_STL;
-            rotpers(ecord, &camera_matrix);
-            ecord++;
-        }
-        wibl -= 2;
-        // Set ceiling
-        mapblk = get_map_block_at(stl_x, stl_y+1);
-        wib_v = get_mapblk_wibble_value(mapblk);
-        hpos = subtile_coord(get_mapblk_filled_subtiles(mapblk),0) - view_alt;
-        if (wib_v == 2)
-        {
-            wibl = get_wibble_from_table(wib_x + 2 * (hmax + 2 * wib_y - hmin) + 32, stl_x, stl_y);
-        }
-        ecord = &ecol->cors[8];
-        {
-            ecord->x = apos + wibl->field_0;
-            ecord->y = hpos + wibl->field_4;
-            ecord->z = bpos + wibl->field_8;
-            ecord->field_8 = 0;
-            // Use lightness from last cube
-            ecord->field_A = lightness;
-            rotpers(ecord, &camera_matrix);
-        }
-        stl_x++;
-        ecol++;
-        apos += COORD_PER_STL;
-    }
+    // int wib_x;
+    // int wib_y;
+    // int wib_v;
+    // wib_y = (stl_y + 1) & 3;
+    // int idxx;
+    // for (idxx=mmax-mmin+1; idxx > 0; idxx--)
+    // {
+    //     unsigned long mask_cur;
+    //     unsigned long mask_yp;
+    //     mask_cur = mask_unrev;
+    //     mask_yp = mask_unrev;
+    //     mapblk = get_map_block_at(stl_x, stl_y+1);
+    //     wib_v = get_mapblk_wibble_value(mapblk);
+    //     if (map_block_revealed_bit(mapblk, player_bit)) {
+    //         col = get_map_column(mapblk);
+    //         mask_cur = col->solidmask;
+    //     }
+    //     mapblk = get_map_block_at(stl_x, stl_y);
+    //     if (map_block_revealed_bit(mapblk, player_bit)) {
+    //         col = get_map_column(mapblk);
+    //         mask_yp = col->solidmask;
+    //     }
+    //     unsigned long nfulmask_or;
+    //     unsigned long nfulmask_and;
+    //     nfulmask_or = mask_cur | mask_yp;
+    //     nfulmask_and = mask_cur & mask_yp;
+    //     unsigned long fulmask_or;
+    //     unsigned long fulmask_and;
+    //     fulmask_or = nfulmask_or | pfulmask_or;
+    //     fulmask_and = nfulmask_and & pfulmask_and;
+    //     pfulmask_or = nfulmask_or;
+    //     pfulmask_and = nfulmask_and;
+    //     int lightness;
+    //     lightness = 0;
+    //     if ((fulmask_or & 0x10000) == 0)
+    //         lightness = game.lish.subtile_lightness[get_subtile_number(stl_x, stl_y+1)];
+    //     long hmin;
+    //     long hmax;
+    //     hmax = height_masks[fulmask_or & 0xff];
+    //     hmin = _DK_floor_height[fulmask_and & 0xff];
+    //     struct EngineCoord *ecord;
+    //     ecord = &ecol->cors[hmin];
+    //     long hpos;
+    //     hpos = subtile_coord(hmin,0) - view_alt;
+    //     wib_x = stl_x & 3;
+    //     struct WibbleTable *wibl;
+    //     wibl = get_wibble_from_table(32 * wib_v + wib_x + (wib_y << 2), stl_x, stl_y);
+    //     int idxh;
+    //     for (idxh = hmax-hmin+1; idxh > 0; idxh--)
+    //     {
+    //         ecord->x = apos + wibl->field_0;
+    //         ecord->y = hpos + wibl->field_4;
+    //         ecord->z = bpos + wibl->field_8;
+    //         ecord->field_8 = 0;
+    //         lightness += wibl->field_C;
+    //         if (lightness < 0)
+    //             lightness = 0;
+    //         if (lightness > 16128)
+    //             lightness = 16128;
+    //         ecord->field_A = lightness;
+    //         wibl += 2;
+    //         hpos += COORD_PER_STL;
+    //         rotpers(ecord, &camera_matrix);
+    //         ecord++;
+    //     }
+    //     wibl -= 2;
+    //     // Set ceiling
+    //     mapblk = get_map_block_at(stl_x, stl_y+1);
+    //     wib_v = get_mapblk_wibble_value(mapblk);
+    //     hpos = subtile_coord(get_mapblk_filled_subtiles(mapblk),0) - view_alt;
+    //     if (wib_v == 2)
+    //     {
+    //         wibl = get_wibble_from_table(wib_x + 2 * (hmax + 2 * wib_y - hmin) + 32, stl_x, stl_y);
+    //     }
+    //     ecord = &ecol->cors[8];
+    //     {
+    //         ecord->x = apos + wibl->field_0;
+    //         ecord->y = hpos + wibl->field_4;
+    //         ecord->z = bpos + wibl->field_8;
+    //         ecord->field_8 = 0;
+    //         // Use lightness from last cube
+    //         ecord->field_A = lightness;
+    //         rotpers(ecord, &camera_matrix);
+    //     }
+    //     stl_x++;
+    //     ecol++;
+    //     apos += COORD_PER_STL;
+    // }
 }
 
 void fill_in_points_cluedo(long bstl_x, long bstl_y, struct MinMax *mm)
 {
-    //_DK_fill_in_points_cluedo(bstl_x, bstl_y, mm);
-    if ((bstl_y < 0) || (bstl_y > map_subtiles_y-1)) {
-        return;
-    }
-    long mmin;
-    long mmax;
-    mmin = min(mm[0].min,mm[1].min);
-    mmax = max(mm[0].max,mm[1].max);
-    if (mmin + bstl_x < 1) {
-        mmin = 1 - bstl_x;
-    }
-    if (mmax + bstl_x > map_subtiles_y) {
-        mmax = map_subtiles_y - bstl_x;
-    }
-    if (mmax < mmin) {
-        return;
-    }
-    MapSubtlCoord stl_x;
-    MapSubtlCoord stl_y;
-    stl_y = bstl_y;
-    stl_x = mmin + bstl_x;
-    apos += (mmin << 8);
-    struct EngineCol *ecol;
-    ecol = &front_ec[mmin + 31];
-    unsigned long mask_unrev;
-    {
-        struct Column *col;
-        col = get_column(game.unrevealed_column_idx);
-        mask_unrev = (col->solidmask & 3) + 65536;
-    }
-    struct Map *mapblk;
-    struct Column *col;
-    unsigned long pfulmask_or;
-    unsigned long pfulmask_and;
-    {
-        unsigned long mask_cur;
-        unsigned long mask_yp;
-        mask_cur = mask_unrev;
-        mask_yp = mask_unrev;
-        mapblk = get_map_block_at(stl_x-1, stl_y+1);
-        if (map_block_revealed_bit(mapblk, player_bit)) {
-            col = get_map_column(mapblk);
-            mask_cur = col->solidmask;
-            if ((mask_cur >= 8) && ((mapblk->flags & (SlbAtFlg_IsDoor|SlbAtFlg_IsRoom)) == 0) && ((col->bitfields & 0xE) == 0)) {
-                mask_cur &= 3;
-            }
-        }
-        mapblk = get_map_block_at(stl_x-1, stl_y);
-        if (map_block_revealed_bit(mapblk, player_bit)) {
-            col = get_map_column(mapblk);
-            mask_yp = col->solidmask;
-            if ((mask_yp >= 8) && ((mapblk->flags & (SlbAtFlg_IsDoor|SlbAtFlg_IsRoom)) == 0) && ((col->bitfields & 0xE) == 0)) {
-                mask_yp &= 3;
-            }
-        }
-        pfulmask_or = mask_cur | mask_yp;
-        pfulmask_and = mask_cur & mask_yp;
-    }
-    struct PlayerInfo *myplyr;
-    myplyr = get_my_player();
-    const struct Camera *cam;
-    cam = myplyr->acamera;
-    long view_z;
-    int zoom;
-    long eview_w;
-    long eview_h;
-    long eview_z;
-    int hview_y;
-    int hview_z;
-    zoom = cam->zoom / pixel_size;
-    view_z = object_origin.z + (cells_away << 8)
-        + ((bpos * camera_matrix.r[2].v[2]
-         + (apos + camera_matrix.r[2].v[1]) * (camera_matrix.r[2].v[0] - view_alt)
-          - camera_matrix.r[2].v[3]
-          - apos * -view_alt) >> 14);
-    eview_w = (view_width_over_2 + (zoom
-          * (object_origin.x
-           + ((bpos * camera_matrix.r[0].v[2]
-            + (apos + camera_matrix.r[0].v[1]) * (camera_matrix.r[0].v[0] - view_alt)
-             - camera_matrix.r[0].v[3]
-             - apos * -view_alt) >> 14)) >> 16)) << 8;
-    hview_y = (view_height_over_2 - (zoom
-          * (object_origin.y
-           + ((bpos * camera_matrix.r[1].v[2]
-            + (apos + camera_matrix.r[1].v[1]) * (camera_matrix.r[1].v[0] - view_alt)
-             - camera_matrix.r[1].v[3]
-             - apos * -view_alt) >> 14)) >> 16)) << 8;
-    hview_z = (abs(view_z) >> 1);
-    if (hview_z < 32) {
-        hview_z = 0;
-    } else
-    if (hview_z >= 11232) {
-        hview_z = 11232;
-    }
-    int dview_w;
-    int dview_h;
-    int dview_z;
-    int dhview_y;
-    int dhview_z;
+    // //_DK_fill_in_points_cluedo(bstl_x, bstl_y, mm);
+    // if ((bstl_y < 0) || (bstl_y > map_subtiles_y-1)) {
+    //     return;
+    // }
+    // long mmin;
+    // long mmax;
+    // mmin = min(mm[0].min,mm[1].min);
+    // mmax = max(mm[0].max,mm[1].max);
+    // if (mmin + bstl_x < 1) {
+    //     mmin = 1 - bstl_x;
+    // }
+    // if (mmax + bstl_x > map_subtiles_y) {
+    //     mmax = map_subtiles_y - bstl_x;
+    // }
+    // if (mmax < mmin) {
+    //     return;
+    // }
+    // MapSubtlCoord stl_x;
+    // MapSubtlCoord stl_y;
+    // stl_y = bstl_y;
+    // stl_x = mmin + bstl_x;
+    // apos += (mmin << 8);
+    // struct EngineCol *ecol;
+    // ecol = &front_ec[mmin + 31];
+    // unsigned long mask_unrev;
+    // {
+    //     struct Column *col;
+    //     col = get_column(game.unrevealed_column_idx);
+    //     mask_unrev = (col->solidmask & 3) + 65536;
+    // }
+    // struct Map *mapblk;
+    // struct Column *col;
+    // unsigned long pfulmask_or;
+    // unsigned long pfulmask_and;
+    // {
+    //     unsigned long mask_cur;
+    //     unsigned long mask_yp;
+    //     mask_cur = mask_unrev;
+    //     mask_yp = mask_unrev;
+    //     mapblk = get_map_block_at(stl_x-1, stl_y+1);
+    //     if (map_block_revealed_bit(mapblk, player_bit)) {
+    //         col = get_map_column(mapblk);
+    //         mask_cur = col->solidmask;
+    //         if ((mask_cur >= 8) && ((mapblk->flags & (SlbAtFlg_IsDoor|SlbAtFlg_IsRoom)) == 0) && ((col->bitfields & 0xE) == 0)) {
+    //             mask_cur &= 3;
+    //         }
+    //     }
+    //     mapblk = get_map_block_at(stl_x-1, stl_y);
+    //     if (map_block_revealed_bit(mapblk, player_bit)) {
+    //         col = get_map_column(mapblk);
+    //         mask_yp = col->solidmask;
+    //         if ((mask_yp >= 8) && ((mapblk->flags & (SlbAtFlg_IsDoor|SlbAtFlg_IsRoom)) == 0) && ((col->bitfields & 0xE) == 0)) {
+    //             mask_yp &= 3;
+    //         }
+    //     }
+    //     pfulmask_or = mask_cur | mask_yp;
+    //     pfulmask_and = mask_cur & mask_yp;
+    // }
+    // struct PlayerInfo *myplyr;
+    // myplyr = get_my_player();
+    // const struct Camera *cam;
+    // cam = myplyr->acamera;
+    // long view_z;
+    // int zoom;
+    // long eview_w;
+    // long eview_h;
+    // long eview_z;
+    // int hview_y;
+    // int hview_z;
+    // zoom = cam->zoom / pixel_size;
+    // view_z = object_origin.z + (cells_away << 8)
+    //     + ((bpos * camera_matrix.r[2].v[2]
+    //      + (apos + camera_matrix.r[2].v[1]) * (camera_matrix.r[2].v[0] - view_alt)
+    //       - camera_matrix.r[2].v[3]
+    //       - apos * -view_alt) >> 14);
+    // eview_w = (view_width_over_2 + (zoom
+    //       * (object_origin.x
+    //        + ((bpos * camera_matrix.r[0].v[2]
+    //         + (apos + camera_matrix.r[0].v[1]) * (camera_matrix.r[0].v[0] - view_alt)
+    //          - camera_matrix.r[0].v[3]
+    //          - apos * -view_alt) >> 14)) >> 16)) << 8;
+    // hview_y = (view_height_over_2 - (zoom
+    //       * (object_origin.y
+    //        + ((bpos * camera_matrix.r[1].v[2]
+    //         + (apos + camera_matrix.r[1].v[1]) * (camera_matrix.r[1].v[0] - view_alt)
+    //          - camera_matrix.r[1].v[3]
+    //          - apos * -view_alt) >> 14)) >> 16)) << 8;
+    // hview_z = (abs(view_z) >> 1);
+    // if (hview_z < 32) {
+    //     hview_z = 0;
+    // } else
+    // if (hview_z >= 11232) {
+    //     hview_z = 11232;
+    // }
+    // int dview_w;
+    // int dview_h;
+    // int dview_z;
+    // int dhview_y;
+    // int dhview_z;
 
-    dview_w = zoom * camera_matrix.r[0].v[0] >> 14;
-    dhview_y = -(zoom * camera_matrix.r[1].v[0]) >> 14;
-    dhview_z = camera_matrix.r[2].v[0] >> 7;
-    dview_h = -(zoom * camera_matrix.r[1].v[1]) >> 14;
-    dview_z = camera_matrix.r[2].v[1] >> 7;
-    int wib_x;
-    int wib_y;
-    int wib_v;
-    wib_y = (stl_y + 1) & 3;
-    int idxx;
-    for (idxx=mmax-mmin+1; idxx > 0; idxx--)
-    {
-        unsigned long mask_cur;
-        unsigned long mask_yp;
-        mask_cur = mask_unrev;
-        mask_yp = mask_unrev;
-        mapblk = get_map_block_at(stl_x, stl_y+1);
-        wib_v = get_mapblk_wibble_value(mapblk);
-        if (map_block_revealed_bit(mapblk, player_bit)) {
-            col = get_map_column(mapblk);
-            mask_cur = col->solidmask;
-            if ((mask_cur >= 8) && ((mapblk->flags & (SlbAtFlg_IsDoor|SlbAtFlg_IsRoom)) == 0) && ((col->bitfields & 0xE) == 0)) {
-                mask_cur &= 3;
-            }
-        }
-        mapblk = get_map_block_at(stl_x, stl_y);
-        if (map_block_revealed_bit(mapblk, player_bit)) {
-            col = get_map_column(mapblk);
-            mask_yp = col->solidmask;
-            if ((mask_yp >= 8) && ((mapblk->flags & (SlbAtFlg_IsDoor|SlbAtFlg_IsRoom)) == 0) && ((col->bitfields & 0xE) == 0)) {
-                mask_yp &= 3;
-            }
-        }
-        unsigned long nfulmask_or;
-        unsigned long nfulmask_and;
-        nfulmask_or = mask_cur | mask_yp;
-        nfulmask_and = mask_cur & mask_yp;
-        unsigned long fulmask_or;
-        unsigned long fulmask_and;
-        fulmask_or = nfulmask_or | pfulmask_or;
-        fulmask_and = nfulmask_and & pfulmask_and;
-        pfulmask_or = nfulmask_or;
-        pfulmask_and = nfulmask_and;
-        int lightness;
-        lightness = 0;
-        if ((fulmask_or & 0x10000) == 0)
-            lightness = game.lish.subtile_lightness[get_subtile_number(stl_x, stl_y+1)];
+    // dview_w = zoom * camera_matrix.r[0].v[0] >> 14;
+    // dhview_y = -(zoom * camera_matrix.r[1].v[0]) >> 14;
+    // dhview_z = camera_matrix.r[2].v[0] >> 7;
+    // dview_h = -(zoom * camera_matrix.r[1].v[1]) >> 14;
+    // dview_z = camera_matrix.r[2].v[1] >> 7;
+    // int wib_x;
+    // int wib_y;
+    // int wib_v;
+    // wib_y = (stl_y + 1) & 3;
+    // int idxx;
+    // for (idxx=mmax-mmin+1; idxx > 0; idxx--)
+    // {
+    //     unsigned long mask_cur;
+    //     unsigned long mask_yp;
+    //     mask_cur = mask_unrev;
+    //     mask_yp = mask_unrev;
+    //     mapblk = get_map_block_at(stl_x, stl_y+1);
+    //     wib_v = get_mapblk_wibble_value(mapblk);
+    //     if (map_block_revealed_bit(mapblk, player_bit)) {
+    //         col = get_map_column(mapblk);
+    //         mask_cur = col->solidmask;
+    //         if ((mask_cur >= 8) && ((mapblk->flags & (SlbAtFlg_IsDoor|SlbAtFlg_IsRoom)) == 0) && ((col->bitfields & 0xE) == 0)) {
+    //             mask_cur &= 3;
+    //         }
+    //     }
+    //     mapblk = get_map_block_at(stl_x, stl_y);
+    //     if (map_block_revealed_bit(mapblk, player_bit)) {
+    //         col = get_map_column(mapblk);
+    //         mask_yp = col->solidmask;
+    //         if ((mask_yp >= 8) && ((mapblk->flags & (SlbAtFlg_IsDoor|SlbAtFlg_IsRoom)) == 0) && ((col->bitfields & 0xE) == 0)) {
+    //             mask_yp &= 3;
+    //         }
+    //     }
+    //     unsigned long nfulmask_or;
+    //     unsigned long nfulmask_and;
+    //     nfulmask_or = mask_cur | mask_yp;
+    //     nfulmask_and = mask_cur & mask_yp;
+    //     unsigned long fulmask_or;
+    //     unsigned long fulmask_and;
+    //     fulmask_or = nfulmask_or | pfulmask_or;
+    //     fulmask_and = nfulmask_and & pfulmask_and;
+    //     pfulmask_or = nfulmask_or;
+    //     pfulmask_and = nfulmask_and;
+    //     int lightness;
+    //     lightness = 0;
+    //     if ((fulmask_or & 0x10000) == 0)
+    //         lightness = game.lish.subtile_lightness[get_subtile_number(stl_x, stl_y+1)];
 
-        long hmin;
-        long hmax;
-        hmax = height_masks[fulmask_or & 0xff];
-        hmin = _DK_floor_height[fulmask_and & 0xff];
-        struct EngineCoord *ecord;
-        ecord = &ecol->cors[hmin];
-        wib_x = stl_x & 3;
-        struct WibbleTable *wibl;
-        wibl = get_wibble_from_table(32 * wib_v + wib_x + (wib_y << 2), stl_x, stl_y);
-        long *randmis;
-        randmis = &randomisors[(stl_x + 17 * (stl_y + 1)) & 0xff];
-        eview_h = dview_h * hmin + hview_y;
-        eview_z = dview_z * hmin + hview_z;
-        int idxh;
-        for (idxh = hmax-hmin+1; idxh > 0; idxh--)
-        {
-            ecord->view_width = (eview_w + wibl->field_10) >> 8;
-            ecord->view_height = (eview_h + wibl->field_14) >> 8;
-            ecord->z = eview_z;
-            ecord->field_8 = 0;
-            lightness += *randmis;
-            if (lightness < 0)
-                lightness = 0;
-            if (lightness > 16128)
-                lightness = 16128;
-            ecord->field_A = lightness;
-            if (ecord->z < 32) {
-                ecord->z = 0;
-            } else
-            if (ecord->z >= 11232) {
-                ecord->z = 11232;
-            }
-            if (ecord->view_width < 0) {
-                ecord->field_8 |= 0x08;
-            } else
-            if (ecord->view_width >= vec_window_width) {
-                ecord->field_8 |= 0x10;
-            }
-            if (ecord->view_height < 0) {
-                ecord->field_8 |= 0x20;
-            } else
-            if (ecord->view_height >= vec_window_height) {
-                ecord->field_8 |= 0x40;
-            }
+    //     long hmin;
+    //     long hmax;
+    //     hmax = height_masks[fulmask_or & 0xff];
+    //     hmin = _DK_floor_height[fulmask_and & 0xff];
+    //     struct EngineCoord *ecord;
+    //     ecord = &ecol->cors[hmin];
+    //     wib_x = stl_x & 3;
+    //     struct WibbleTable *wibl;
+    //     wibl = get_wibble_from_table(32 * wib_v + wib_x + (wib_y << 2), stl_x, stl_y);
+    //     long *randmis;
+    //     randmis = &randomisors[(stl_x + 17 * (stl_y + 1)) & 0xff];
+    //     eview_h = dview_h * hmin + hview_y;
+    //     eview_z = dview_z * hmin + hview_z;
+    //     int idxh;
+    //     for (idxh = hmax-hmin+1; idxh > 0; idxh--)
+    //     {
+    //         ecord->view_width = (eview_w + wibl->field_10) >> 8;
+    //         ecord->view_height = (eview_h + wibl->field_14) >> 8;
+    //         ecord->z = eview_z;
+    //         ecord->field_8 = 0;
+    //         lightness += *randmis;
+    //         if (lightness < 0)
+    //             lightness = 0;
+    //         if (lightness > 16128)
+    //             lightness = 16128;
+    //         ecord->field_A = lightness;
+    //         if (ecord->z < 32) {
+    //             ecord->z = 0;
+    //         } else
+    //         if (ecord->z >= 11232) {
+    //             ecord->z = 11232;
+    //         }
+    //         if (ecord->view_width < 0) {
+    //             ecord->field_8 |= 0x08;
+    //         } else
+    //         if (ecord->view_width >= vec_window_width) {
+    //             ecord->field_8 |= 0x10;
+    //         }
+    //         if (ecord->view_height < 0) {
+    //             ecord->field_8 |= 0x20;
+    //         } else
+    //         if (ecord->view_height >= vec_window_height) {
+    //             ecord->field_8 |= 0x40;
+    //         }
 
-            wibl += 2;
-            ecord++;
-            randmis++;
-            eview_h += dview_h;
-            eview_z += dview_z;
-        }
-        stl_x++;
-        ecol++;
-        apos += 256;
-        eview_w += dview_w;
-        hview_y += dhview_y;
-        hview_z += dhview_z;
-    }
+    //         wibl += 2;
+    //         ecord++;
+    //         randmis++;
+    //         eview_h += dview_h;
+    //         eview_z += dview_z;
+    //     }
+    //     stl_x++;
+    //     ecol++;
+    //     apos += 256;
+    //     eview_w += dview_w;
+    //     hview_y += dhview_y;
+    //     hview_z += dhview_z;
+    // }
 }
 
 void fill_in_points_isometric(long bstl_x, long bstl_y, struct MinMax *mm)
@@ -874,6 +882,7 @@ void fill_in_points_isometric(long bstl_x, long bstl_y, struct MinMax *mm)
     if (mmax < mmin) {
         return;
     }
+    
     MapSubtlCoord stl_x;
     MapSubtlCoord stl_y;
     stl_y = bstl_y;
@@ -886,7 +895,8 @@ void fill_in_points_isometric(long bstl_x, long bstl_y, struct MinMax *mm)
     clip = clip_min | clip_max | lim_max | lim_min;
     apos += (mmin << 8);
     struct EngineCol *ecol;
-    ecol = &front_ec[mmin + 31];
+    
+    ecol = &front_ec[mmin + ((MINMAX_LENGTH/2)-1)];
     unsigned long mask_unrev;
     {
         struct Column *col;
@@ -922,6 +932,7 @@ void fill_in_points_isometric(long bstl_x, long bstl_y, struct MinMax *mm)
         pfulmask_or = mask_cur | mask_yp;
         pfulmask_and = mask_cur & mask_yp;
     }
+    
     struct PlayerInfo *myplyr;
     myplyr = get_my_player();
     const struct Camera *cam;
@@ -978,6 +989,7 @@ void fill_in_points_isometric(long bstl_x, long bstl_y, struct MinMax *mm)
     int wib_v;
     wib_y = (stl_y + 1) & 3;
     int idxx;
+    
     for (idxx=mmax-mmin+1; idxx > 0; idxx--)
     {
         unsigned long mask_cur;
@@ -1033,42 +1045,42 @@ void fill_in_points_isometric(long bstl_x, long bstl_y, struct MinMax *mm)
         eview_z = dview_z * hmin + hview_z;
         randmis = &randomisors[(stl_x + 17 * (stl_y+1)) & 0xff] + hmin;
         int idxh;
-        for (idxh = hmax-hmin+1; idxh > 0; idxh--)
-        {
-            ecord->view_width = (eview_w + wibl->field_10) >> 8;
-            ecord->view_height = (eview_h + wibl->field_14) >> 8;
-            ecord->z = eview_z;
-            ecord->field_8 = 0;
-            lightness += 4 * (*randmis & 0xff) - 512;
-            if (lightness < 0)
-                lightness = 0;
-            if (lightness > 15872)
-                lightness = 15872;
-            ecord->field_A = lightness;
-            if (ecord->z < 32) {
-                ecord->z = 0;
-            } else
-            if (ecord->z >= 11232) {
-                ecord->z = 11232;
-            }
-            if (ecord->view_width < 0) {
-                ecord->field_8 |= 0x08;
-            } else
-            if (ecord->view_width >= vec_window_width) {
-                ecord->field_8 |= 0x10;
-            }
-            if (ecord->view_height < 0) {
-                ecord->field_8 |= 0x20;
-            } else
-            if (ecord->view_height >= vec_window_height) {
-                ecord->field_8 |= 0x40;
-            }
-            wibl += 2;
-            ecord++;
-            randmis++;
-            eview_h += dview_h;
-            eview_z += dview_z;
-        }
+         for (idxh = hmax-hmin+1; idxh > 0; idxh--)
+         {
+             ecord->view_width = (eview_w + wibl->field_10) >> 8;
+             ecord->view_height = (eview_h + wibl->field_14) >> 8;
+             ecord->z = eview_z;
+             ecord->field_8 = 0;
+             lightness += 4 * (*randmis & 0xff) - 512;
+             if (lightness < 0)
+                 lightness = 0;
+             if (lightness > 15872)
+                 lightness = 15872;
+             ecord->field_A = lightness;
+             if (ecord->z < 32) {
+                 ecord->z = 0;
+             } else
+             if (ecord->z >= 11232) {
+                 ecord->z = 11232;
+             }
+             if (ecord->view_width < 0) {
+                 ecord->field_8 |= 0x08;
+             } else
+             if (ecord->view_width >= vec_window_width) {
+                 ecord->field_8 |= 0x10;
+             }
+             if (ecord->view_height < 0) {
+                 ecord->field_8 |= 0x20;
+             } else
+             if (ecord->view_height >= vec_window_height) {
+                 ecord->field_8 |= 0x40;
+             }
+             wibl += 2;
+             ecord++;
+             randmis++;
+             eview_h += dview_h;
+             eview_z += dview_z;
+         }
         stl_x++;
         ecol++;
         apos += 256;
@@ -1202,15 +1214,17 @@ void find_gamut(void)
         struct MinMax *mml;
         struct MinMax *mmr;
         cell_lim = cells_away + 1;
-        mml = &minmaxs[31];
-        mmr = &minmaxs[31];
+        mml = &minmaxs[((MINMAX_LENGTH/2)-1)];
+        mmr = &minmaxs[((MINMAX_LENGTH/2)-1)];
         for (cell_cur = 0; cell_cur < cell_lim; cell_cur++)
         {
             long dist;
             dist = LbSqrL(cell_lim * cell_lim - cell_cur * cell_cur);
+            
             mmr->max = dist;
             mml->max = dist;
             dist = -mmr->max;
+
             mmr->min = dist;
             mml->min = dist;
             mmr++;
@@ -1221,671 +1235,673 @@ void find_gamut(void)
         return;
     }
 
-    int angle_sin;
-    int angle_cos;
-    angle_sin = LbSinL(cam_map_angle);
-    angle_cos = LbCosL(cam_map_angle);
-    int cells_w;
-    int cells_h;
-    cells_h = 6 * angle_cos >> 16;
-    cells_w = -6 * angle_sin >> 16;
-    int scr_w1;
-    int scr_h1;
-    int scr_w2;
-    int scr_h2;
-    long screen_dist;
-    screen_dist = (lbDisplay.PhysicalScreenWidth << 7) / lens;
-    scr_w1 = cells_w + ((screen_dist * angle_cos - (angle_sin << 8)) >> 16);
-    scr_h1 = cells_h + (((angle_cos << 8) + screen_dist * angle_sin) >> 16);
-    scr_w2 = cells_w + ((-screen_dist * angle_cos - (angle_sin << 8)) >> 16);
-    scr_h2 = cells_h + (((angle_cos << 8) - screen_dist * angle_sin) >> 16);
-    int mbase;
-    int delta;
-    struct MinMax *mm;
-    int cell_curr;
-    if (scr_h1 < cells_h)
-    {
-        delta = ((scr_w1 - cells_w) << 8) / (scr_h1 - cells_h);
-        mm = &minmaxs[-cells_away + 31];
-        mbase = delta * (-cells_away - cells_h);
-        for (cell_curr = -cells_away; cell_curr <= cells_away; cell_curr++)
-        {
-            int nlimit;
-            nlimit = cells_w + (mbase >> 8);
-            if (mm->max > nlimit)
-                mm->max = nlimit;
-            mm++;
-            mbase += delta;
-        }
-    } else
-    if (scr_h1 > cells_h)
-    {
-        delta = ((scr_w1 - cells_w) << 8) / (scr_h1 - cells_h);
-        mm = &minmaxs[-cells_away + 31];
-        mbase = delta * (-cells_away - cells_h);
-        for (cell_curr = -cells_away; cell_curr <= cells_away; cell_curr++)
-        {
-            int nlimit;
-            nlimit = cells_w + (mbase >> 8);
-            if (mm->min < nlimit)
-                mm->min = nlimit;
-            mm++;
-            mbase += delta;
-        }
-    } else
-    {
-        if (scr_w1 <= cells_w)
-        {
-            mm = &minmaxs[cells_h + 31];
-            for (cell_curr = cells_h; cell_curr >= -cells_away; cell_curr--)
-            {
-                mm->max = 0;
-                mm->min = 0;
-                mm--;
-            }
-        } else
-        {
-            mm = &minmaxs[cells_h + 31];
-            for (cell_curr = cells_h; cell_curr <= cells_away; cell_curr++)
-            {
-                mm->max = 0;
-                mm->min = 0;
-                mm++;
-            }
-        }
-    }
+    // int angle_sin;
+    // int angle_cos;
+    // angle_sin = LbSinL(cam_map_angle);
+    // angle_cos = LbCosL(cam_map_angle);
+    // int cells_w;
+    // int cells_h;
+    // cells_h = 6 * angle_cos >> 16;
+    // cells_w = -6 * angle_sin >> 16;
+    // JUSTLOG("cells_h: %d", cells_h);
+    // JUSTLOG("cells_w: %d", cells_w);
+    // int scr_w1;
+    // int scr_h1;
+    // int scr_w2;
+    // int scr_h2;
+    // long screen_dist;
+    // screen_dist = (lbDisplay.PhysicalScreenWidth << 7) / lens;
+    // scr_w1 = cells_w + ((screen_dist * angle_cos - (angle_sin << 8)) >> 16);
+    // scr_h1 = cells_h + (((angle_cos << 8) + screen_dist * angle_sin) >> 16);
+    // scr_w2 = cells_w + ((-screen_dist * angle_cos - (angle_sin << 8)) >> 16);
+    // scr_h2 = cells_h + (((angle_cos << 8) - screen_dist * angle_sin) >> 16);
+    // int mbase;
+    // int delta;
+    // struct MinMax *mm;
+    // int cell_curr;
+    // if (scr_h1 < cells_h)
+    // {
+    //     delta = ((scr_w1 - cells_w) << 8) / (scr_h1 - cells_h);
+    //     mm = &minmaxs[-cells_away + 63];
+    //     mbase = delta * (-cells_away - cells_h);
+    //     for (cell_curr = -cells_away; cell_curr <= cells_away; cell_curr++)
+    //     {
+    //         int nlimit;
+    //         nlimit = cells_w + (mbase >> 8);
+    //         if (mm->max > nlimit)
+    //             mm->max = nlimit;
+    //         mm++;
+    //         mbase += delta;
+    //     }
+    // } else
+    // if (scr_h1 > cells_h)
+    // {
+    //     delta = ((scr_w1 - cells_w) << 8) / (scr_h1 - cells_h);
+    //     mm = &minmaxs[-cells_away + 63];
+    //     mbase = delta * (-cells_away - cells_h);
+    //     for (cell_curr = -cells_away; cell_curr <= cells_away; cell_curr++)
+    //     {
+    //         int nlimit;
+    //         nlimit = cells_w + (mbase >> 8);
+    //         if (mm->min < nlimit)
+    //             mm->min = nlimit;
+    //         mm++;
+    //         mbase += delta;
+    //     }
+    // } else
+    // {
+    //     if (scr_w1 <= cells_w)
+    //     {
+    //         mm = &minmaxs[cells_h + 63];
+    //         for (cell_curr = cells_h; cell_curr >= -cells_away; cell_curr--)
+    //         {
+    //             mm->max = 0;
+    //             mm->min = 0;
+    //             mm--;
+    //         }
+    //     } else
+    //     {
+    //         mm = &minmaxs[cells_h + 63];
+    //         for (cell_curr = cells_h; cell_curr <= cells_away; cell_curr++)
+    //         {
+    //             mm->max = 0;
+    //             mm->min = 0;
+    //             mm++;
+    //         }
+    //     }
+    // }
 
-    if (scr_h2 < cells_h)
-    {
-        delta = ((scr_w2 - cells_w) << 8) / (scr_h2 - cells_h);
-        mm = &minmaxs[-cells_away + 31];
-        mbase = delta * (-cells_away - cells_h);
-        for (cell_curr = -cells_away; cell_curr <= cells_away; cell_curr++)
-        {
-            int nlimit;
-            nlimit = cells_w + (mbase >> 8);
-            if ( mm->min < nlimit )
-              mm->min = nlimit;
-            mm++;
-            mbase += delta;
-        }
-    } else
-    if (scr_h2 > cells_h)
-    {
-        delta = ((scr_w2 - cells_w) << 8) / (scr_h2 - cells_h);
-        mm = &minmaxs[-cells_away + 31];
-        mbase = delta * (-cells_away - cells_h);
-        for (cell_curr = -cells_away; cell_curr <= cells_away; cell_curr++)
-        {
-            int nlimit;
-            nlimit = cells_w + (mbase >> 8);
-            if (mm->max > nlimit)
-              mm->max = nlimit;
-            mm++;
-            mbase += delta;
-        }
-    } else
-    {
-        if (cells_w <= scr_w2)
-        {
-            mm = &minmaxs[cells_h + 31];
-            for ( ; cells_h >= -cells_away; cells_h--)
-            {
-                mm->max = 0;
-                mm->min = 0;
-                mm--;
-            }
-        } else
-        {
-            mm = &minmaxs[cells_h + 31];
-            for ( ; cells_away >= cells_h; cells_h++)
-            {
-                mm->max = 0;
-                mm->min = 0;
-                mm++;
-            }
-        }
-    }
+    // if (scr_h2 < cells_h)
+    // {
+    //     delta = ((scr_w2 - cells_w) << 8) / (scr_h2 - cells_h);
+    //     mm = &minmaxs[-cells_away + 63];
+    //     mbase = delta * (-cells_away - cells_h);
+    //     for (cell_curr = -cells_away; cell_curr <= cells_away; cell_curr++)
+    //     {
+    //         int nlimit;
+    //         nlimit = cells_w + (mbase >> 8);
+    //         if ( mm->min < nlimit )
+    //           mm->min = nlimit;
+    //         mm++;
+    //         mbase += delta;
+    //     }
+    // } else
+    // if (scr_h2 > cells_h)
+    // {
+    //     delta = ((scr_w2 - cells_w) << 8) / (scr_h2 - cells_h);
+    //     mm = &minmaxs[-cells_away + 63];
+    //     mbase = delta * (-cells_away - cells_h);
+    //     for (cell_curr = -cells_away; cell_curr <= cells_away; cell_curr++)
+    //     {
+    //         int nlimit;
+    //         nlimit = cells_w + (mbase >> 8);
+    //         if (mm->max > nlimit)
+    //           mm->max = nlimit;
+    //         mm++;
+    //         mbase += delta;
+    //     }
+    // } else
+    // {
+    //     if (cells_w <= scr_w2)
+    //     {
+    //         mm = &minmaxs[cells_h + 63];
+    //         for ( ; cells_h >= -cells_away; cells_h--)
+    //         {
+    //             mm->max = 0;
+    //             mm->min = 0;
+    //             mm--;
+    //         }
+    //     } else
+    //     {
+    //         mm = &minmaxs[cells_h + 63];
+    //         for ( ; cells_away >= cells_h; cells_h++)
+    //         {
+    //             mm->max = 0;
+    //             mm->min = 0;
+    //             mm++;
+    //         }
+    //     }
+    // }
 }
 
-static void fiddle_half_gamut(long start_stl_x, long start_stl_y, long step, long a4)
-{
-    //_DK_fiddle_half_gamut(a1, a2, a3, a4);
-    long end_stl_x;
-    long stl_xc;
-    long stl_xp;
-    long stl_xn;
+// static void fiddle_half_gamut(long start_stl_x, long start_stl_y, long step, long a4)
+// {
+//     //_DK_fiddle_half_gamut(a1, a2, a3, a4);
+//     long end_stl_x;
+//     long stl_xc;
+//     long stl_xp;
+//     long stl_xn;
 
-    end_stl_x = start_stl_x + minmaxs[32].min;
-    for (stl_xc=start_stl_x; 1; stl_xc--)
-    {
-        if (stl_xc < end_stl_x) {
-            stl_xc = -4000;
-            break;
-        }
-        struct Map *mapblk;
-        mapblk = get_map_block_at(stl_xc, start_stl_y);
-        if  ((mapblk->flags & SlbAtFlg_Blocking) != 0) {
-            break;
-        }
-    }
-    for (stl_xp=start_stl_x; 1; stl_xp--)
-    {
-        if (stl_xp < end_stl_x) {
-            stl_xp = -4000;
-            break;
-        }
-        struct Map *mapblk;
-        mapblk = get_map_block_at(stl_xp, start_stl_y-1);
-        if  ((mapblk->flags & SlbAtFlg_Blocking) != 0) {
-            break;
-        }
-    }
-    for (stl_xn=start_stl_x; 1; stl_xn--)
-    {
-        if (stl_xn < end_stl_x) {
-            stl_xn = -4000;
-            break;
-        }
-        struct Map *mapblk;
-        mapblk = get_map_block_at(stl_xn, start_stl_y-1);
-        if  ((mapblk->flags & SlbAtFlg_Blocking) != 0) {
-            break;
-        }
-    }
-    long stl_x_min;
-    stl_x_min = 0;
-    TbBool set_x_min;
-    set_x_min = false;
-    if ((stl_xc != -4000) && (stl_xp != -4000) && (stl_xn != -4000))
-    {
-        stl_x_min = min(min(stl_xn, stl_xp), stl_xc);
-        set_x_min = true;
-        minmaxs[32].min = stl_x_min - start_stl_x;
-    }
+//     end_stl_x = start_stl_x + minmaxs[32].min;
+//     for (stl_xc=start_stl_x; 1; stl_xc--)
+//     {
+//         if (stl_xc < end_stl_x) {
+//             stl_xc = -4000;
+//             break;
+//         }
+//         struct Map *mapblk;
+//         mapblk = get_map_block_at(stl_xc, start_stl_y);
+//         if  ((mapblk->flags & SlbAtFlg_Blocking) != 0) {
+//             break;
+//         }
+//     }
+//     for (stl_xp=start_stl_x; 1; stl_xp--)
+//     {
+//         if (stl_xp < end_stl_x) {
+//             stl_xp = -4000;
+//             break;
+//         }
+//         struct Map *mapblk;
+//         mapblk = get_map_block_at(stl_xp, start_stl_y-1);
+//         if  ((mapblk->flags & SlbAtFlg_Blocking) != 0) {
+//             break;
+//         }
+//     }
+//     for (stl_xn=start_stl_x; 1; stl_xn--)
+//     {
+//         if (stl_xn < end_stl_x) {
+//             stl_xn = -4000;
+//             break;
+//         }
+//         struct Map *mapblk;
+//         mapblk = get_map_block_at(stl_xn, start_stl_y-1);
+//         if  ((mapblk->flags & SlbAtFlg_Blocking) != 0) {
+//             break;
+//         }
+//     }
+//     long stl_x_min;
+//     stl_x_min = 0;
+//     TbBool set_x_min;
+//     set_x_min = false;
+//     if ((stl_xc != -4000) && (stl_xp != -4000) && (stl_xn != -4000))
+//     {
+//         stl_x_min = min(min(stl_xn, stl_xp), stl_xc);
+//         set_x_min = true;
+//         minmaxs[32].min = stl_x_min - start_stl_x;
+//     }
 
-    end_stl_x = start_stl_x + minmaxs[32].max;
-    for (stl_xc=start_stl_x; 1; stl_xc++)
-    {
-        if (stl_xc > end_stl_x) {
-            stl_xc = -4000;
-            break;
-        }
-        struct Map *mapblk;
-        mapblk = get_map_block_at(stl_xc, start_stl_y);
-        if  ((mapblk->flags & SlbAtFlg_Blocking) != 0) {
-            break;
-        }
-    }
-    for (stl_xp=start_stl_x; 1; stl_xp++)
-    {
-        if (stl_xp > end_stl_x) {
-            stl_xp = -4000;
-            break;
-        }
-        struct Map *mapblk;
-        mapblk = get_map_block_at(stl_xp, start_stl_y-1);
-        if  ((mapblk->flags & SlbAtFlg_Blocking) != 0) {
-            break;
-        }
-    }
-    for (stl_xn=start_stl_x; 1; stl_xn++)
-    {
-        if (stl_xn > end_stl_x) {
-            stl_xn = -4000;
-            break;
-        }
-        struct Map *mapblk;
-        mapblk = get_map_block_at(stl_xn, start_stl_y-1);
-        if  ((mapblk->flags & SlbAtFlg_Blocking) != 0) {
-            break;
-        }
-    }
-    long stl_x_max;
-    stl_x_max = 0;
-    TbBool set_x_max;
-    set_x_max = false;
-    if ((stl_xc != -4000) && (stl_xp != -4000) && (stl_xn != -4000))
-    {
-        stl_x_max = max(max(stl_xn, stl_xp), stl_xc);
-        set_x_max = true;
-        minmaxs[32].max = stl_x_max - start_stl_x + 1;
-    }
+//     end_stl_x = start_stl_x + minmaxs[32].max;
+//     for (stl_xc=start_stl_x; 1; stl_xc++)
+//     {
+//         if (stl_xc > end_stl_x) {
+//             stl_xc = -4000;
+//             break;
+//         }
+//         struct Map *mapblk;
+//         mapblk = get_map_block_at(stl_xc, start_stl_y);
+//         if  ((mapblk->flags & SlbAtFlg_Blocking) != 0) {
+//             break;
+//         }
+//     }
+//     for (stl_xp=start_stl_x; 1; stl_xp++)
+//     {
+//         if (stl_xp > end_stl_x) {
+//             stl_xp = -4000;
+//             break;
+//         }
+//         struct Map *mapblk;
+//         mapblk = get_map_block_at(stl_xp, start_stl_y-1);
+//         if  ((mapblk->flags & SlbAtFlg_Blocking) != 0) {
+//             break;
+//         }
+//     }
+//     for (stl_xn=start_stl_x; 1; stl_xn++)
+//     {
+//         if (stl_xn > end_stl_x) {
+//             stl_xn = -4000;
+//             break;
+//         }
+//         struct Map *mapblk;
+//         mapblk = get_map_block_at(stl_xn, start_stl_y-1);
+//         if  ((mapblk->flags & SlbAtFlg_Blocking) != 0) {
+//             break;
+//         }
+//     }
+//     long stl_x_max;
+//     stl_x_max = 0;
+//     TbBool set_x_max;
+//     set_x_max = false;
+//     if ((stl_xc != -4000) && (stl_xp != -4000) && (stl_xn != -4000))
+//     {
+//         stl_x_max = max(max(stl_xn, stl_xp), stl_xc);
+//         set_x_max = true;
+//         minmaxs[32].max = stl_x_max - start_stl_x + 1;
+//     }
 
-    struct MinMax *mm;
-    long stl_y;
-    stl_y = start_stl_y + step;
-    mm = &minmaxs[step + 32];
-    long n;
-    for (n=1; n < a4; n++)
-    {
-        if (mm->max <= mm->min)
-        {
-            long i;
-            for (i=a4-n; i > 0; i--)
-            {
-                mm->min = 0;
-                mm->max = 0;
-                mm += step;
-            }
-            break;
-        }
-        long stl_x_min_limit;
-        stl_x_min_limit = start_stl_x + mm->min;
-        if (!set_x_min || (stl_x_min < stl_x_min_limit)) {
-            stl_x_min = stl_x_min_limit;
-        }
-        long stl_x_max_limit;
-        stl_x_max_limit = start_stl_x + mm->max;
-        if (!set_x_max || (stl_x_max > stl_x_max_limit)) {
-            stl_x_max = stl_x_max_limit;
-        }
+//     struct MinMax *mm;
+//     long stl_y;
+//     stl_y = start_stl_y + step;
+//     mm = &minmaxs[step + 32];
+//     long n;
+//     for (n=1; n < a4; n++)
+//     {
+//         if (mm->max <= mm->min)
+//         {
+//             long i;
+//             for (i=a4-n; i > 0; i--)
+//             {
+//                 mm->min = 0;
+//                 mm->max = 0;
+//                 mm += step;
+//             }
+//             break;
+//         }
+//         long stl_x_min_limit;
+//         stl_x_min_limit = start_stl_x + mm->min;
+//         if (!set_x_min || (stl_x_min < stl_x_min_limit)) {
+//             stl_x_min = stl_x_min_limit;
+//         }
+//         long stl_x_max_limit;
+//         stl_x_max_limit = start_stl_x + mm->max;
+//         if (!set_x_max || (stl_x_max > stl_x_max_limit)) {
+//             stl_x_max = stl_x_max_limit;
+//         }
 
-        /* The variable needs to be volatile to disallow changing it to float during optimisations.
-         * Changing it to float would lead to conditions like "if (delta_y != 1)" not working.
-         */
-        volatile long delta_y;
-        delta_y = abs(stl_y - start_stl_y);
-        long rect_factor;
+//         /* The variable needs to be volatile to disallow changing it to float during optimisations.
+//          * Changing it to float would lead to conditions like "if (delta_y != 1)" not working.
+//          */
+//         volatile long delta_y;
+//         delta_y = abs(stl_y - start_stl_y);
+//         long rect_factor;
 
-        TbBool set_x_min_rect;
-        if (delta_y != 1) {
-            rect_factor = (stl_x_min - start_stl_x) / (delta_y - 1);
-        } else {
-            rect_factor = 1;
-        }
-        if (rect_factor - 1 <= 0) {
-            set_x_min_rect = false;
-        } else {
-            set_x_min_rect = true;
-            stl_x_min = rect_factor + stl_x_min - 1;
-        }
+//         TbBool set_x_min_rect;
+//         if (delta_y != 1) {
+//             rect_factor = (stl_x_min - start_stl_x) / (delta_y - 1);
+//         } else {
+//             rect_factor = 1;
+//         }
+//         if (rect_factor - 1 <= 0) {
+//             set_x_min_rect = false;
+//         } else {
+//             set_x_min_rect = true;
+//             stl_x_min = rect_factor + stl_x_min - 1;
+//         }
 
-        long stl_x;
-        long stl_x_lc_min;
+//         long stl_x;
+//         long stl_x_lc_min;
 
-        for (stl_x=stl_x_min-1; stl_x < stl_x_max_limit; stl_x++)
-        {
-            struct Map *mapblk;
-            mapblk = get_map_block_at(stl_x+1, stl_y);
-            if ((mapblk->flags & SlbAtFlg_Blocking) == 0)
-              break;
-        }
-        stl_x_lc_min = stl_x;
+//         for (stl_x=stl_x_min-1; stl_x < stl_x_max_limit; stl_x++)
+//         {
+//             struct Map *mapblk;
+//             mapblk = get_map_block_at(stl_x+1, stl_y);
+//             if ((mapblk->flags & SlbAtFlg_Blocking) == 0)
+//               break;
+//         }
+//         stl_x_lc_min = stl_x;
 
-        if ( set_x_min_rect
-          || stl_x_lc_min > stl_x_min
-          || (get_map_block_at(stl_x_lc_min, stl_y)->flags & SlbAtFlg_Blocking) )
-        {
-            long stl_tmp;
-            stl_tmp = stl_x_min - start_stl_x;
-            stl_x_min = stl_x_lc_min;
-            set_x_min = true;
-            mm->min = stl_tmp - 1;
-        }
-        else
-        {
-          if (delta_y != 1) {
-              rect_factor = (stl_x_lc_min - start_stl_x) / (delta_y - 1);
-          } else {
-              rect_factor = 1;
-          }
-          long stl_x_min_sublim;
-          if ((delta_y == 1) || (stl_x_min + rect_factor - 1 < stl_x_min_limit))
-          {
-              set_x_min = false;
-              stl_x_min_sublim = stl_x_min_limit;
-          } else
-          {
-              stl_x_min += rect_factor - 1;
-              set_x_min = true;
-              stl_x_min_sublim = stl_x_min;
-              mm->min = stl_x_min - start_stl_x - 1;
-          }
-          for (stl_x=stl_x_min; stl_x >= stl_x_min_sublim; stl_x--)
-          {
-              struct Map *mapblk;
-              mapblk = get_map_block_at(stl_x, stl_y);
-              if ((mapblk->flags & SlbAtFlg_Blocking) != 0) {
-                  stl_x_min = stl_x;
-                  set_x_min = true;
-                  mm->min = stl_x - start_stl_x - 1;
-                  break;
-              }
-          }
-        }
+//         if ( set_x_min_rect
+//           || stl_x_lc_min > stl_x_min
+//           || (get_map_block_at(stl_x_lc_min, stl_y)->flags & SlbAtFlg_Blocking) )
+//         {
+//             long stl_tmp;
+//             stl_tmp = stl_x_min - start_stl_x;
+//             stl_x_min = stl_x_lc_min;
+//             set_x_min = true;
+//             mm->min = stl_tmp - 1;
+//         }
+//         else
+//         {
+//           if (delta_y != 1) {
+//               rect_factor = (stl_x_lc_min - start_stl_x) / (delta_y - 1);
+//           } else {
+//               rect_factor = 1;
+//           }
+//           long stl_x_min_sublim;
+//           if ((delta_y == 1) || (stl_x_min + rect_factor - 1 < stl_x_min_limit))
+//           {
+//               set_x_min = false;
+//               stl_x_min_sublim = stl_x_min_limit;
+//           } else
+//           {
+//               stl_x_min += rect_factor - 1;
+//               set_x_min = true;
+//               stl_x_min_sublim = stl_x_min;
+//               mm->min = stl_x_min - start_stl_x - 1;
+//           }
+//           for (stl_x=stl_x_min; stl_x >= stl_x_min_sublim; stl_x--)
+//           {
+//               struct Map *mapblk;
+//               mapblk = get_map_block_at(stl_x, stl_y);
+//               if ((mapblk->flags & SlbAtFlg_Blocking) != 0) {
+//                   stl_x_min = stl_x;
+//                   set_x_min = true;
+//                   mm->min = stl_x - start_stl_x - 1;
+//                   break;
+//               }
+//           }
+//         }
 
-        TbBool set_x_max_rect;
-        if (delta_y != 1) {
-            rect_factor = (stl_x_max - start_stl_x) / (delta_y - 1);
-        } else {
-            rect_factor = 1;
-        }
-        if (rect_factor + 1 >= 0) {
-            set_x_max_rect = false;
-        } else {
-            set_x_max_rect = true;
-            stl_x_max += rect_factor + 1;
-        }
+//         TbBool set_x_max_rect;
+//         if (delta_y != 1) {
+//             rect_factor = (stl_x_max - start_stl_x) / (delta_y - 1);
+//         } else {
+//             rect_factor = 1;
+//         }
+//         if (rect_factor + 1 >= 0) {
+//             set_x_max_rect = false;
+//         } else {
+//             set_x_max_rect = true;
+//             stl_x_max += rect_factor + 1;
+//         }
 
-        for (stl_x=stl_x_max+1; stl_x > stl_x_min_limit; stl_x--)
-        {
-            struct Map *mapblk;
-            mapblk = get_map_block_at(stl_x-1, stl_y);
-            if ((mapblk->flags & SlbAtFlg_Blocking) == 0)
-              break;
-        }
-        stl_x_lc_min = stl_x;
+//         for (stl_x=stl_x_max+1; stl_x > stl_x_min_limit; stl_x--)
+//         {
+//             struct Map *mapblk;
+//             mapblk = get_map_block_at(stl_x-1, stl_y);
+//             if ((mapblk->flags & SlbAtFlg_Blocking) == 0)
+//               break;
+//         }
+//         stl_x_lc_min = stl_x;
 
-        if ( set_x_max_rect
-          || stl_x_lc_min < stl_x_max
-          || (get_map_block_at(stl_x_lc_min, stl_y)->flags & SlbAtFlg_Blocking) )
-        {
-            long stl_tmp;
-            stl_tmp = stl_x_max - start_stl_x;
-            stl_x_max = stl_x_lc_min;
-            mm->max = stl_tmp + 2;
-            set_x_max = true;
-        }
-        else
-        {
-          set_x_max = 0;
-          if (delta_y != 1) {
-              rect_factor = (stl_x_lc_min - start_stl_x) / (delta_y - 1);
-          } else {
-              rect_factor = 1;
-          }
+//         if ( set_x_max_rect
+//           || stl_x_lc_min < stl_x_max
+//           || (get_map_block_at(stl_x_lc_min, stl_y)->flags & SlbAtFlg_Blocking) )
+//         {
+//             long stl_tmp;
+//             stl_tmp = stl_x_max - start_stl_x;
+//             stl_x_max = stl_x_lc_min;
+//             mm->max = stl_tmp + 2;
+//             set_x_max = true;
+//         }
+//         else
+//         {
+//           set_x_max = 0;
+//           if (delta_y != 1) {
+//               rect_factor = (stl_x_lc_min - start_stl_x) / (delta_y - 1);
+//           } else {
+//               rect_factor = 1;
+//           }
 
-          long stl_x_max_sublim;
-          if ((delta_y == 1) || (stl_x_max + rect_factor + 1 > start_stl_x + mm->max))
-          {
-              stl_x_max_sublim = start_stl_x + mm->max;
-          } else
-          {
-              stl_x_max += rect_factor + 1;
-              set_x_max = true;
-              stl_x_max_sublim = stl_x_max;
-              mm->max = stl_x_max - start_stl_x + 2;
-          }
-          for (stl_x=stl_x_max; stl_x <= stl_x_max_sublim; stl_x++)
-          {
-              struct Map *mapblk;
-              mapblk = get_map_block_at(stl_x, stl_y);
-              if ((mapblk->flags & SlbAtFlg_Blocking) != 0) {
-                  set_x_max = true;
-                  stl_x_max = stl_x;
-                  mm->max = stl_x - start_stl_x + 2;
-                  break;
-              }
-          }
-        }
+//           long stl_x_max_sublim;
+//           if ((delta_y == 1) || (stl_x_max + rect_factor + 1 > start_stl_x + mm->max))
+//           {
+//               stl_x_max_sublim = start_stl_x + mm->max;
+//           } else
+//           {
+//               stl_x_max += rect_factor + 1;
+//               set_x_max = true;
+//               stl_x_max_sublim = stl_x_max;
+//               mm->max = stl_x_max - start_stl_x + 2;
+//           }
+//           for (stl_x=stl_x_max; stl_x <= stl_x_max_sublim; stl_x++)
+//           {
+//               struct Map *mapblk;
+//               mapblk = get_map_block_at(stl_x, stl_y);
+//               if ((mapblk->flags & SlbAtFlg_Blocking) != 0) {
+//                   set_x_max = true;
+//                   stl_x_max = stl_x;
+//                   mm->max = stl_x - start_stl_x + 2;
+//                   break;
+//               }
+//           }
+//         }
 
-        if (mm->min < -cells_away)
-            mm->min = -cells_away;
-        if (mm->max > cells_away)
-            mm->max = cells_away;
-        if (mm->min >= mm->max)
-        {
-            long i;
-            for (i=a4-n; i > 0; i--)
-            {
-                mm->min = 0;
-                mm->max = 0;
-                mm += step;
-            }
-            break;
-        }
-        mm += step;
-        stl_y += step;
-    }
-}
+//         if (mm->min < -cells_away)
+//             mm->min = -cells_away;
+//         if (mm->max > cells_away)
+//             mm->max = cells_away;
+//         if (mm->min >= mm->max)
+//         {
+//             long i;
+//             for (i=a4-n; i > 0; i--)
+//             {
+//                 mm->min = 0;
+//                 mm->max = 0;
+//                 mm += step;
+//             }
+//             break;
+//         }
+//         mm += step;
+//         stl_y += step;
+//     }
+// }
+//
+// static void fiddle_gamut_find_limits(long *floor_x, long *floor_y, long ewwidth, long ewheight, long ewzoom)
+// {
+//     long len_01;
+//     long len_02;
+//     long len_13;
+//     long len_23;
+//     long tmp_y;
+//     long tmp_x;
+//     long i;
+//     get_floor_pointed_at(ewwidth + ewzoom, -ewzoom, &floor_y[2], &floor_x[2]);
+//     get_floor_pointed_at(ewwidth + ewzoom, ewheight + ewzoom, &floor_y[1], &floor_x[1]);
+//     get_floor_pointed_at(-ewzoom, ewheight + ewzoom, &floor_y[0], &floor_x[0]);
+//     get_floor_pointed_at(-ewzoom, -ewzoom, &floor_y[3], &floor_x[3]);
+//     // Get the value with lowest X coord into [0]
+//     for (i=1; i < 4; i++)
+//     {
+//         tmp_y = floor_y[i];
+//         if (floor_y[0] > tmp_y)
+//         {
+//           tmp_x = floor_x[i];
+//           floor_x[i] = floor_x[0];
+//           floor_x[0] = tmp_x;
+//           floor_y[i] = floor_y[0];
+//           floor_y[0] = tmp_y;
+//         }
+//     }
+//     // Get the value with highest X coord into [3]
+//     for (i=0; i < 3; i++)
+//     {
+//         tmp_y = floor_y[i];
+//         if (floor_y[3] < tmp_y)
+//         {
+//           tmp_x = floor_x[i];
+//           floor_x[i] = floor_x[3];
+//           floor_x[3] = tmp_x;
+//           floor_y[i] = floor_y[3];
+//           floor_y[3] = tmp_y;
+//         }
+//     }
+//     // Between values with medicore X, place the lowest Y first
+//     if (floor_x[1] > floor_x[2])
+//     {
+//         tmp_x = floor_x[1];
+//         tmp_y = floor_y[1];
+//         floor_x[1] = floor_x[2];
+//         floor_x[2] = tmp_x;
+//         floor_y[1] = floor_y[2];
+//         floor_y[2] = tmp_y;
+//     }
 
-static void fiddle_gamut_find_limits(long *floor_x, long *floor_y, long ewwidth, long ewheight, long ewzoom)
-{
-    long len_01;
-    long len_02;
-    long len_13;
-    long len_23;
-    long tmp_y;
-    long tmp_x;
-    long i;
-    get_floor_pointed_at(ewwidth + ewzoom, -ewzoom, &floor_y[2], &floor_x[2]);
-    get_floor_pointed_at(ewwidth + ewzoom, ewheight + ewzoom, &floor_y[1], &floor_x[1]);
-    get_floor_pointed_at(-ewzoom, ewheight + ewzoom, &floor_y[0], &floor_x[0]);
-    get_floor_pointed_at(-ewzoom, -ewzoom, &floor_y[3], &floor_x[3]);
-    // Get the value with lowest X coord into [0]
-    for (i=1; i < 4; i++)
-    {
-        tmp_y = floor_y[i];
-        if (floor_y[0] > tmp_y)
-        {
-          tmp_x = floor_x[i];
-          floor_x[i] = floor_x[0];
-          floor_x[0] = tmp_x;
-          floor_y[i] = floor_y[0];
-          floor_y[0] = tmp_y;
-        }
-    }
-    // Get the value with highest X coord into [3]
-    for (i=0; i < 3; i++)
-    {
-        tmp_y = floor_y[i];
-        if (floor_y[3] < tmp_y)
-        {
-          tmp_x = floor_x[i];
-          floor_x[i] = floor_x[3];
-          floor_x[3] = tmp_x;
-          floor_y[i] = floor_y[3];
-          floor_y[3] = tmp_y;
-        }
-    }
-    // Between values with medicore X, place the lowest Y first
-    if (floor_x[1] > floor_x[2])
-    {
-        tmp_x = floor_x[1];
-        tmp_y = floor_y[1];
-        floor_x[1] = floor_x[2];
-        floor_x[2] = tmp_x;
-        floor_y[1] = floor_y[2];
-        floor_y[2] = tmp_y;
-    }
+//     // Lengths of X vectors
+//     len_01 = abs(floor_y[1] - floor_y[0]);
+//     len_13 = abs(floor_y[3] - floor_y[1]);
+//     len_02 = abs(floor_y[2] - floor_y[0]);
+//     len_23 = abs(floor_y[3] - floor_y[2]);
+//     // Update points according to both coordinates
+//     if ( (floor_x[1] > floor_x[0]) && (len_01 < len_13) )
+//     {
+//         tmp_x = floor_x[1];
+//         floor_y[1] = floor_y[0];
+//         floor_x[1] = floor_x[0];
+//         floor_x[0] = tmp_x;
+//     }
+//     if ( (floor_x[1] > floor_x[3]) && (len_13 < len_01) )
+//     {
+//         tmp_x = floor_x[1];
+//         floor_y[1] = floor_y[3];
+//         floor_x[1] = floor_x[3];
+//         floor_x[3] = tmp_x;
+//     }
+//     if ( (floor_x[2] < floor_x[0]) && (len_02 < len_23) )
+//     {
+//         tmp_x = floor_x[2];
+//         floor_y[2] = floor_y[0];
+//         floor_x[2] = floor_x[0];
+//         floor_x[0] = tmp_x;
+//     }
+//     if ( (floor_x[2] < floor_x[3]) && (len_23 < len_02) )
+//     {
+//         tmp_x = floor_x[2];
+//         floor_x[2] = floor_x[3];
+//         floor_x[3] = tmp_x;
+//         floor_y[2] = floor_y[3];
+//     }
+// }
 
-    // Lengths of X vectors
-    len_01 = abs(floor_y[1] - floor_y[0]);
-    len_13 = abs(floor_y[3] - floor_y[1]);
-    len_02 = abs(floor_y[2] - floor_y[0]);
-    len_23 = abs(floor_y[3] - floor_y[2]);
-    // Update points according to both coordinates
-    if ( (floor_x[1] > floor_x[0]) && (len_01 < len_13) )
-    {
-        tmp_x = floor_x[1];
-        floor_y[1] = floor_y[0];
-        floor_x[1] = floor_x[0];
-        floor_x[0] = tmp_x;
-    }
-    if ( (floor_x[1] > floor_x[3]) && (len_13 < len_01) )
-    {
-        tmp_x = floor_x[1];
-        floor_y[1] = floor_y[3];
-        floor_x[1] = floor_x[3];
-        floor_x[3] = tmp_x;
-    }
-    if ( (floor_x[2] < floor_x[0]) && (len_02 < len_23) )
-    {
-        tmp_x = floor_x[2];
-        floor_y[2] = floor_y[0];
-        floor_x[2] = floor_x[0];
-        floor_x[0] = tmp_x;
-    }
-    if ( (floor_x[2] < floor_x[3]) && (len_23 < len_02) )
-    {
-        tmp_x = floor_x[2];
-        floor_x[2] = floor_x[3];
-        floor_x[3] = tmp_x;
-        floor_y[2] = floor_y[3];
-    }
-}
+// static void fiddle_gamut_set_base(long *floor_x, long *floor_y, long pos_x, long pos_y)
+// {
+//     floor_x[0] -= pos_x;
+//     floor_x[1] -= pos_x;
+//     floor_y[0] += 32 - pos_y;
+//     floor_x[2] -= pos_x;
+//     floor_y[1] += 32 - pos_y;
+//     floor_y[2] += 32 - pos_y;
+//     floor_x[3] -= pos_x;
+//     floor_y[3] += 32 - pos_y;
+// }
 
-static void fiddle_gamut_set_base(long *floor_x, long *floor_y, long pos_x, long pos_y)
-{
-    floor_x[0] -= pos_x;
-    floor_x[1] -= pos_x;
-    floor_y[0] += 32 - pos_y;
-    floor_x[2] -= pos_x;
-    floor_y[1] += 32 - pos_y;
-    floor_y[2] += 32 - pos_y;
-    floor_x[3] -= pos_x;
-    floor_y[3] += 32 - pos_y;
-}
+// static void fiddle_gamut_set_minmaxes(long *floor_x, long *floor_y, long max_tiles)
+// {
+//     struct MinMax *mm;
+//     long mlimit;
+//     long bormul;
+//     long bormuh;
+//     long borinc;
+//     short bordec;
+//     long midx;
+//     midx = 0;
+//     mlimit = floor_y[0];
+//     if (mlimit > MINMAX_LENGTH-1)
+//       mlimit = MINMAX_LENGTH-1;
+//     for (; midx < mlimit; midx++)
+//     {
+//         mm = &minmaxs[midx];
+//         mm->min = 0;
+//         mm->max = 0;
+//     }
+//     if (floor_y[1] <= floor_y[0])
+//         borinc = floor_x[0];
+//     else
+//         borinc = ((floor_x[1] - floor_x[0]) << 16) / (floor_y[1] - floor_y[0]);
 
-static void fiddle_gamut_set_minmaxes(long *floor_x, long *floor_y, long max_tiles)
-{
-    struct MinMax *mm;
-    long mlimit;
-    long bormul;
-    long bormuh;
-    long borinc;
-    short bordec;
-    long midx;
-    midx = 0;
-    mlimit = floor_y[0];
-    if (mlimit > MINMAX_LENGTH-1)
-      mlimit = MINMAX_LENGTH-1;
-    for (; midx < mlimit; midx++)
-    {
-        mm = &minmaxs[midx];
-        mm->min = 0;
-        mm->max = 0;
-    }
-    if (floor_y[1] <= floor_y[0])
-        borinc = floor_x[0];
-    else
-        borinc = ((floor_x[1] - floor_x[0]) << 16) / (floor_y[1] - floor_y[0]);
+//     bormul = (floor_x[0] << 16);
+//     if (floor_y[0] < 0)
+//         bormul -= floor_y[0] * borinc;
 
-    bormul = (floor_x[0] << 16);
-    if (floor_y[0] < 0)
-        bormul -= floor_y[0] * borinc;
+//     mlimit = floor_y[1];
+//     if (mlimit > MINMAX_LENGTH-1)
+//       mlimit = MINMAX_LENGTH-1;
+//     for (; midx < mlimit; midx++)
+//     {
+//         mm = &minmaxs[midx];
+//         bordec = (bormul >> 16);
+//         if (bordec < -max_tiles)
+//             mm->min = -max_tiles;
+//         else
+//             mm->min = bordec;
+//         bormul += borinc;
+//     }
 
-    mlimit = floor_y[1];
-    if (mlimit > MINMAX_LENGTH-1)
-      mlimit = MINMAX_LENGTH-1;
-    for (; midx < mlimit; midx++)
-    {
-        mm = &minmaxs[midx];
-        bordec = (bormul >> 16);
-        if (bordec < -max_tiles)
-            mm->min = -max_tiles;
-        else
-            mm->min = bordec;
-        bormul += borinc;
-    }
+//     bormul = floor_x[1] << 16;
+//     if (floor_y[1] < floor_y[3])
+//       borinc = ((floor_x[3] - floor_x[1]) << 16) / (floor_y[3] - floor_y[1]);
 
-    bormul = floor_x[1] << 16;
-    if (floor_y[1] < floor_y[3])
-      borinc = ((floor_x[3] - floor_x[1]) << 16) / (floor_y[3] - floor_y[1]);
+//     mlimit = floor_y[3];
+//     if (mlimit > MINMAX_LENGTH-1)
+//       mlimit = MINMAX_LENGTH-1;
+//     if (midx < 0) {
+//         bormul -= midx * borinc;
+//         midx = 0;
+//     }
 
-    mlimit = floor_y[3];
-    if (mlimit > MINMAX_LENGTH-1)
-      mlimit = MINMAX_LENGTH-1;
-    if (midx < 0) {
-        bormul -= midx * borinc;
-        midx = 0;
-    }
+//     for (; midx < mlimit; midx++)
+//     {
+//         mm = &minmaxs[midx];
+//         bordec = (bormul >> 16);
+//         if (bordec < -max_tiles)
+//             mm->min = -max_tiles;
+//         else
+//             mm->min = bordec;
+//         bormul += borinc;
+//     }
+//     midx = floor_y[0];
+//     if (floor_y[2] > floor_y[0])
+//         borinc = ((floor_x[2] - floor_x[0]) << 16) / (floor_y[2] - floor_y[0]);
+//     mlimit = floor_y[2];
+//     if (mlimit > MINMAX_LENGTH-1)
+//         mlimit = MINMAX_LENGTH-1;
+//     bormuh = (floor_x[0] << 16);
+//     if (midx < 0) {
+//         bormuh -= floor_y[0] * borinc;
+//         midx = 0;
+//     }
 
-    for (; midx < mlimit; midx++)
-    {
-        mm = &minmaxs[midx];
-        bordec = (bormul >> 16);
-        if (bordec < -max_tiles)
-            mm->min = -max_tiles;
-        else
-            mm->min = bordec;
-        bormul += borinc;
-    }
-    midx = floor_y[0];
-    if (floor_y[2] > floor_y[0])
-        borinc = ((floor_x[2] - floor_x[0]) << 16) / (floor_y[2] - floor_y[0]);
-    mlimit = floor_y[2];
-    if (mlimit > MINMAX_LENGTH-1)
-        mlimit = MINMAX_LENGTH-1;
-    bormuh = (floor_x[0] << 16);
-    if (midx < 0) {
-        bormuh -= floor_y[0] * borinc;
-        midx = 0;
-    }
+//     for (; midx < mlimit; midx++)
+//     {
+//         mm = &minmaxs[midx];
+//         bordec = (bormuh >> 16) + 1;
+//         if (bordec > max_tiles)
+//             mm->max = max_tiles;
+//         else
+//             mm->max = bordec;
+//         bormuh += borinc;
+//     }
 
-    for (; midx < mlimit; midx++)
-    {
-        mm = &minmaxs[midx];
-        bordec = (bormuh >> 16) + 1;
-        if (bordec > max_tiles)
-            mm->max = max_tiles;
-        else
-            mm->max = bordec;
-        bormuh += borinc;
-    }
+//     bormul = floor_x[2] << 16;
+//     if (floor_y[2] < floor_y[3])
+//       borinc = ((floor_x[3] - floor_x[2]) << 16) / (floor_y[3] - floor_y[2]);
+//     mlimit = floor_y[3];
+//     if (mlimit > MINMAX_LENGTH-1)
+//       mlimit = MINMAX_LENGTH-1;
+//     if ( midx < 0 ) {
+//         bormul -= midx * borinc;
+//         midx = 0;
+//     }
 
-    bormul = floor_x[2] << 16;
-    if (floor_y[2] < floor_y[3])
-      borinc = ((floor_x[3] - floor_x[2]) << 16) / (floor_y[3] - floor_y[2]);
-    mlimit = floor_y[3];
-    if (mlimit > MINMAX_LENGTH-1)
-      mlimit = MINMAX_LENGTH-1;
-    if ( midx < 0 ) {
-        bormul -= midx * borinc;
-        midx = 0;
-    }
-
-    for (; midx < mlimit; midx++)
-    {
-        mm = &minmaxs[midx];
-        bordec = (bormul >> 16) + 1;
-        if (bordec > max_tiles)
-            mm->max = max_tiles;
-        else
-            mm->max = bordec;
-        bormul += borinc;
-    }
-    for (; midx <= MINMAX_LENGTH-1; midx++)
-    {
-        mm = &minmaxs[midx];
-        mm->min = 0;
-        mm->max = 0;
-    }
-}
+//     for (; midx < mlimit; midx++)
+//     {
+//         mm = &minmaxs[midx];
+//         bordec = (bormul >> 16) + 1;
+//         if (bordec > max_tiles)
+//             mm->max = max_tiles;
+//         else
+//             mm->max = bordec;
+//         bormul += borinc;
+//     }
+//     for (; midx <= MINMAX_LENGTH-1; midx++)
+//     {
+//         mm = &minmaxs[midx];
+//         mm->min = 0;
+//         mm->max = 0;
+//     }
+// }
 
 /** Prepares limits for tiles to be rendered.
  *
  * @param pos_x
  * @param pos_y
  */
-void fiddle_gamut(long pos_x, long pos_y)
-{
-    struct PlayerInfo *player;
-    long ewwidth;
-    long ewheight;
-    long ewzoom;
-    long floor_x[4];
-    long floor_y[4];
-    player = get_my_player();
-    switch (player->view_mode)
-    {
-    case PVM_CreatureView:
-        fiddle_half_gamut(pos_x, pos_y, 1, cells_away);
-        fiddle_half_gamut(pos_x, pos_y, -1, cells_away + 2);
-        break;
-    case PVM_IsometricView:
-        // Retrieve coordinates on limiting map points
-        ewwidth = player->engine_window_width / pixel_size;
-        ewheight = player->engine_window_height / pixel_size - ((8 * high_offset[1]) >> 8);
-        ewzoom = (768 * (camera_zoom/pixel_size)) >> 17;
-        fiddle_gamut_find_limits(floor_x, floor_y, ewwidth, ewheight, ewzoom);
-        // Place the area at proper base coords
-        fiddle_gamut_set_base(floor_x, floor_y, pos_x, pos_y);
-        fiddle_gamut_set_minmaxes(floor_x, floor_y, 30);
-        break;
-    }
-}
+// void fiddle_gamut(long pos_x, long pos_y)
+// {
+//     struct PlayerInfo *player;
+//     long ewwidth;
+//     long ewheight;
+//     long ewzoom;
+//     long floor_x[4];
+//     long floor_y[4];
+//     player = get_my_player();
+//     switch (player->view_mode)
+//     {
+//     case PVM_CreatureView:
+//         fiddle_half_gamut(pos_x, pos_y, 1, cells_away);
+//         fiddle_half_gamut(pos_x, pos_y, -1, cells_away + 2);
+//         break;
+//     case PVM_IsometricView:
+//         // Retrieve coordinates on limiting map points
+//         ewwidth = player->engine_window_width / pixel_size;
+//         ewheight = player->engine_window_height / pixel_size - ((8 * high_offset[1]) >> 8);
+//         ewzoom = (768 * (camera_zoom/pixel_size)) >> 17;
+//         fiddle_gamut_find_limits(floor_x, floor_y, ewwidth, ewheight, ewzoom);
+//         // Place the area at proper base coords
+//         fiddle_gamut_set_base(floor_x, floor_y, pos_x, pos_y);
+//         fiddle_gamut_set_minmaxes(floor_x, floor_y, 30);
+//         break;
+//     }
+// }
 
 int floor_height_for_volume_box(PlayerNumber plyr_idx, MapSlabCoord slb_x, MapSlabCoord slb_y)
 {
@@ -2712,8 +2728,8 @@ void do_a_plane_of_engine_columns_perspective(long stl_x, long stl_y, long plane
         clip_end = 255 - stl_x;
     struct EngineCol *bec;
     struct EngineCol *fec;
-    bec = &back_ec[clip_start + 31];
-    fec = &front_ec[clip_start + 31];
+    bec = &back_ec[clip_start + ((MINMAX_LENGTH/2)-1)];
+    fec = &front_ec[clip_start + ((MINMAX_LENGTH/2)-1)];
     blank_colmn = get_column(game.unrevealed_column_idx);
     center_block_idx = clip_start + stl_x + (stl_y << 8);
     for (i = clip_end-clip_start; i > 0; i--)
@@ -2969,8 +2985,8 @@ void do_a_plane_of_engine_columns_cluedo(long stl_x, long stl_y, long plane_star
 
         struct EngineCol *bec;
         struct EngineCol *fec;
-        bec = &back_ec[xaval + 31 + xidx];
-        fec = &front_ec[xaval + 31 + xidx];
+        bec = &back_ec[xaval + ((MINMAX_LENGTH/2)-1) + xidx];
+        fec = &front_ec[xaval + ((MINMAX_LENGTH/2)-1) + xidx];
         unsigned short mask;
         int ncor;
         for (mask=1,ncor=0; mask <= solidmsk_cur; mask*=2,ncor++)
@@ -3087,6 +3103,7 @@ void do_a_plane_of_engine_columns_isometric(long stl_x, long stl_y, long plane_s
     xdelta = xbval - xaval;
     const struct Column *unrev_colmn;
     unrev_colmn = get_column(game.unrevealed_column_idx);
+    
     for (xidx=0; xidx < xdelta; xidx++)
     {
         struct Map *cur_mapblk;
@@ -3157,44 +3174,44 @@ void do_a_plane_of_engine_columns_isometric(long stl_x, long stl_y, long plane_s
 
         struct EngineCol *bec;
         struct EngineCol *fec;
-        bec = &back_ec[xaval + 31 + xidx];
-        fec = &front_ec[xaval + 31 + xidx];
+        bec = &back_ec[xaval + ((MINMAX_LENGTH/2)-1) + xidx];
+        fec = &front_ec[xaval + ((MINMAX_LENGTH/2)-1) + xidx];
         unsigned short mask;
         int ncor;
-        for (mask=1,ncor=0; mask <= solidmsk_cur; mask*=2,ncor++)
-        {
-            unsigned short textr_id;
-            struct CubeAttribs *cubed;
-            cubed = &game.cubes_data[cur_colmn->cubes[ncor]];
-            if ((mask & solidmsk_cur) == 0)
-            {
-                continue;
-            }
-            if ((mask & solidmsk_back) == 0)
-            {
-                textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, cubed->texture_id[sideoris[0].field_0]);
-                do_a_gpoly_gourad_tr(&bec[1].cors[ncor+1], &bec[0].cors[ncor+1], &bec[0].cors[ncor],   textr_id, normal_shade_back);
-                do_a_gpoly_gourad_bl(&bec[0].cors[ncor],   &bec[1].cors[ncor],   &bec[1].cors[ncor+1], textr_id, normal_shade_back);
-            }
-            if ((solidmsk_front & mask) == 0)
-            {
-                textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, cubed->texture_id[sideoris[0].field_2]);
-                do_a_gpoly_gourad_tr(&fec[0].cors[ncor+1], &fec[1].cors[ncor+1], &fec[1].cors[ncor],   textr_id, normal_shade_front);
-                do_a_gpoly_gourad_bl(&fec[1].cors[ncor],   &fec[0].cors[ncor],   &fec[0].cors[ncor+1], textr_id, normal_shade_front);
-            }
-            if ((solidmsk_left & mask) == 0)
-            {
-                textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, cubed->texture_id[sideoris[0].field_3]);
-                do_a_gpoly_gourad_tr(&bec[0].cors[ncor+1], &fec[0].cors[ncor+1], &fec[0].cors[ncor],   textr_id, normal_shade_left);
-                do_a_gpoly_gourad_bl(&fec[0].cors[ncor],   &bec[0].cors[ncor],   &bec[0].cors[ncor+1], textr_id, normal_shade_left);
-            }
-            if ((solidmsk_right & mask) == 0)
-            {
-                textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, cubed->texture_id[sideoris[0].field_1]);
-                do_a_gpoly_gourad_tr(&fec[1].cors[ncor+1], &bec[1].cors[ncor+1], &bec[1].cors[ncor],   textr_id, normal_shade_right);
-                do_a_gpoly_gourad_bl(&bec[1].cors[ncor],   &fec[1].cors[ncor],   &fec[1].cors[ncor+1], textr_id, normal_shade_right);
-            }
-        }
+         for (mask=1,ncor=0; mask <= solidmsk_cur; mask*=2,ncor++)
+         {
+             unsigned short textr_id;
+             struct CubeAttribs *cubed;
+             cubed = &game.cubes_data[cur_colmn->cubes[ncor]];
+             if ((mask & solidmsk_cur) == 0)
+             {
+                 continue;
+             }
+             if ((mask & solidmsk_back) == 0)
+             {
+                 textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, cubed->texture_id[sideoris[0].field_0]);
+                 do_a_gpoly_gourad_tr(&bec[1].cors[ncor+1], &bec[0].cors[ncor+1], &bec[0].cors[ncor],   textr_id, normal_shade_back);
+                 do_a_gpoly_gourad_bl(&bec[0].cors[ncor],   &bec[1].cors[ncor],   &bec[1].cors[ncor+1], textr_id, normal_shade_back);
+             }
+             if ((solidmsk_front & mask) == 0)
+             {
+                 textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, cubed->texture_id[sideoris[0].field_2]);
+                 do_a_gpoly_gourad_tr(&fec[0].cors[ncor+1], &fec[1].cors[ncor+1], &fec[1].cors[ncor],   textr_id, normal_shade_front);
+                 do_a_gpoly_gourad_bl(&fec[1].cors[ncor],   &fec[0].cors[ncor],   &fec[0].cors[ncor+1], textr_id, normal_shade_front);
+             }
+             if ((solidmsk_left & mask) == 0)
+             {
+                 textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, cubed->texture_id[sideoris[0].field_3]);
+                 do_a_gpoly_gourad_tr(&bec[0].cors[ncor+1], &fec[0].cors[ncor+1], &fec[0].cors[ncor],   textr_id, normal_shade_left);
+                 do_a_gpoly_gourad_bl(&fec[0].cors[ncor],   &bec[0].cors[ncor],   &bec[0].cors[ncor+1], textr_id, normal_shade_left);
+             }
+             if ((solidmsk_right & mask) == 0)
+             {
+                 textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, cubed->texture_id[sideoris[0].field_1]);
+                 do_a_gpoly_gourad_tr(&fec[1].cors[ncor+1], &bec[1].cors[ncor+1], &bec[1].cors[ncor],   textr_id, normal_shade_right);
+                 do_a_gpoly_gourad_bl(&bec[1].cors[ncor],   &fec[1].cors[ncor],   &fec[1].cors[ncor+1], textr_id, normal_shade_right);
+             }
+         }
 
         ncor = _DK_floor_height[solidmsk_cur];
         if (ncor > 0)
@@ -4844,6 +4861,9 @@ void display_drawlist(void)
     render_alpha = (unsigned char *)&alpha_sprite_table;
     render_problems = 0;
     thing_pointed_at = 0;
+
+    triangles_drawn = 0;
+
     for (bucket_num = BUCKETS_COUNT-1; bucket_num > 0; bucket_num--)
     {
       for (item.b = buckets[bucket_num]; item.b != NULL; item.b = item.b->next)
@@ -4852,6 +4872,7 @@ void display_drawlist(void)
         switch ( item.b->kind )
         {
         case QK_PolyTriangle: // Used in dungeon view and FAR part of FPS view
+          triangles_drawn += 1;
           vec_mode = VM_Unknown5;
           vec_map = block_ptrs[item.unk00->block];
           draw_gpoly(&item.unk00->p1, &item.unk00->p2, &item.unk00->p3);
@@ -5022,6 +5043,8 @@ void display_drawlist(void)
     }
     if (render_problems > 0)
       WARNLOG("Incurred %lu rendering problems; last was with poly kind %ld",render_problems,render_prob_kind);
+    
+    JUSTLOG("Triangles drawn: %d", triangles_drawn);
 }
 
 static void prepare_draw_plane_of_engine_columns(long aposc, long bposc, long xcell, long ycell, struct MinMax *mm)
@@ -5030,6 +5053,11 @@ static void prepare_draw_plane_of_engine_columns(long aposc, long bposc, long xc
     bpos = bposc;
     back_ec = &ecs1[0];
     front_ec = &ecs2[0];
+    JUSTLOG("front_ec array size: %d", sizeof front_ec / sizeof front_ec[0]);
+    JUSTLOG("front_ec array size: %d", sizeof front_ec);
+    JUSTLOG("back_ec array size: %d", sizeof back_ec / sizeof back_ec[0]);
+    JUSTLOG("back_ec array size: %d", sizeof back_ec);
+
     if (lens_mode != 0)
     {
         fill_in_points_perspective(xcell, ycell, mm);
@@ -5053,41 +5081,45 @@ static void prepare_draw_plane_of_engine_columns(long aposc, long bposc, long xc
  */
 static void draw_plane_of_engine_columns(long aposc, long bposc, long xcell, long ycell, struct MinMax *mm)
 {
+    //JUSTLOG("mm->min: %d", mm->min);
+    //JUSTLOG("mm->max: %d", mm->max);
+
     struct EngineCol *ec;
     ec = front_ec;
     front_ec = back_ec;
     back_ec = ec;
     apos = aposc;
     bpos = bposc;
-    if (lens_mode != 0)
-    {
-        fill_in_points_perspective(xcell, ycell, mm);
-        if (mm->min < mm->max)
-        {
-          apos = aposc;
-          bpos = bposc;
-          do_a_plane_of_engine_columns_perspective(xcell, ycell, mm->min, mm->max);
-        }
-    } else
-    if ( settings.video_cluedo_mode )
-    {
-        fill_in_points_cluedo(xcell, ycell, mm);
-        if (mm->min < mm->max)
-        {
-          apos = aposc;
-          bpos = bposc;
-          do_a_plane_of_engine_columns_cluedo(xcell, ycell, mm->min, mm->max);
-        }
-    } else
-    {
+    //if (lens_mode != 0)
+    //{
+    //    fill_in_points_perspective(xcell, ycell, mm);
+    //    if (mm->min < mm->max)
+    //    {
+    //      apos = aposc;
+    //      bpos = bposc;
+    //      do_a_plane_of_engine_columns_perspective(xcell, ycell, mm->min, mm->max);
+    //    }
+    //} else
+    //if ( settings.video_cluedo_mode )
+    //{
+    //    fill_in_points_cluedo(xcell, ycell, mm);
+    //    if (mm->min < mm->max)
+    //    {
+    //      apos = aposc;
+    //      bpos = bposc;
+    //      do_a_plane_of_engine_columns_cluedo(xcell, ycell, mm->min, mm->max);
+    //    }
+    //} else
+    //{
         fill_in_points_isometric(xcell, ycell, mm);
+        
         if (mm->min < mm->max)
         {
           apos = aposc;
           bpos = bposc;
           do_a_plane_of_engine_columns_isometric(xcell, ycell, mm->min, mm->max);
         }
-    }
+    //}
 }
 
 /**
@@ -5101,16 +5133,25 @@ static void draw_view_map_plane(long aposc, long bposc, long xcell, long ycell)
 {
     struct MinMax *mm;
     long i;
-    i = 31-cells_away;
+    i = ((MINMAX_LENGTH/2)-1)-cells_away;
     if (i < 0)
         i = 0;
     mm = &minmaxs[i];
+    
+    JUSTLOG("minmaxs array size: %d", sizeof minmaxs / sizeof minmaxs[0]);
+
+    //JUSTLOG("minmaxs 0: %d", minmaxs[0]);
+    //JUSTLOG("minmaxs 63: %d", minmaxs[31]);
+
     prepare_draw_plane_of_engine_columns(aposc, bposc, xcell, ycell, mm);
-    for (i = 2*cells_away-1; i > 0; i--)
+
+    for (i = 2*cells_away-1; i > 0; i--) //i = 2*cells_away-1
     {
         ycell++;
         bposc -= (map_subtiles_y+1);
         mm++;
+
+        //Draws a single row of engine columns
         draw_plane_of_engine_columns(aposc, bposc, xcell, ycell, mm);
     }
 }
@@ -5174,17 +5215,22 @@ void draw_view(struct Camera *cam, unsigned char a2)
     }
     else
     {
-        fade_min = 1000000;
+        // Isometric
+        fade_min = 555555555;// 1000000; //55555555;
         setup_rotate_stuff(x, y, z, fade_max, fade_min, camera_zoom/pixel_size, cam_map_angle, map_roll);
         do_perspective_rotation(x, y, z);
         cells_away = compute_cells_away();
     }
+    //`cells_away = compute_cells_away();`
+    JUSTLOG("cells_away: %d", cells_away);
+
     xcell = (x >> 8);
     aposc = -(x & 0xFF);
     bposc = (cells_away << 8) + (y & 0xFF);
     ycell = (y >> 8) - (cells_away+1);
+    //bposc
     find_gamut();
-    fiddle_gamut(xcell, ycell + (cells_away+1));
+    //fiddle_gamut(xcell, ycell + (cells_away+1));
     draw_view_map_plane(aposc, bposc, xcell, ycell);
     if (map_volume_box.visible)
     {

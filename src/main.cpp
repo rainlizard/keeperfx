@@ -3906,7 +3906,7 @@ void game_loop(void)
       {
         if (game.numfield_15 == -1)
         {
-          set_player_instance(player, PI_HeartZoom, 0);
+          //set_player_instance(player, PI_HeartZoom, 0);
         } else
         {
           game.numfield_15 = -1;

@@ -2051,7 +2051,7 @@ void SetAlphaScalingData(long x, long y, long swidth, long sheight, long dwidth,
     if ((dwidth <= swidth) && (dheight <= sheight))
         alpha_scale_up = false;
     if ((swidth <= 0) || (dwidth <= 0)) {
-        WARNLOG("Tried scaling width %ld -> %ld", swidth, dwidth);
+        //WARNLOG("Tried scaling width %ld -> %ld", swidth, dwidth);
         LbSpriteClearAlphaScalingWidth();
     } else
     if ((x < 0) || ((dwidth+x) >= gwidth))

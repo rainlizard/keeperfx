@@ -35,7 +35,6 @@
 #include "config_settings.h"
 #include "player_instances.h"
 
-
 #ifdef __cplusplus
 extern "C" {
 #endif

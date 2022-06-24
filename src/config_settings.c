@@ -167,6 +167,8 @@ short save_settings(void)
 
 int get_creature_can_see_subtiles(void)
 {
+    return 45;
+    //return 27;
     return i_can_see_levels[settings.view_distance % 4];
 }
 /******************************************************************************/

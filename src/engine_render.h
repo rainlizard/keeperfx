@@ -333,7 +333,7 @@ struct M33 { // sizeof = 48
 };
 
 struct EngineCol {
-    struct EngineCoord cors[16];
+    struct EngineCoord cors[MINMAX_LENGTH/4]; // Originally 16, when MINMAX_LENGTH was 64
 };
 
 struct SideOri {
@@ -503,14 +503,16 @@ DLLIMPORT struct Thing *_DK_thing_being_displayed;
 #define thing_being_displayed _DK_thing_being_displayed
 DLLIMPORT unsigned char _DK_thing_being_displayed_is_creature;
 #define thing_being_displayed_is_creature _DK_thing_being_displayed_is_creature
-DLLIMPORT extern struct EngineCol _DK_ecs1[];
-#define ecs1 _DK_ecs1
-DLLIMPORT extern struct EngineCol _DK_ecs2[];
-#define ecs2 _DK_ecs2
-DLLIMPORT extern struct EngineCol *_DK_front_ec;
-#define front_ec _DK_front_ec
-DLLIMPORT extern struct EngineCol *_DK_back_ec;
-#define back_ec _DK_back_ec
+
+//DLLIMPORT extern struct EngineCol _DK_ecs1[];
+//#define ecs1 _DK_ecs1
+//DLLIMPORT extern struct EngineCol _DK_ecs2[];
+//#define ecs2 _DK_ecs2
+//DLLIMPORT extern struct EngineCol *_DK_front_ec;
+//#define front_ec _DK_front_ec
+//DLLIMPORT extern struct EngineCol *_DK_back_ec;
+//#define back_ec _DK_back_ec
+
 DLLIMPORT long _DK_global_scaler;
 #define global_scaler _DK_global_scaler
 DLLIMPORT long _DK_water_source_cutoff;

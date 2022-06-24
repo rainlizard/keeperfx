@@ -118,7 +118,7 @@ void rotpers_parallel(struct EngineCoord *epos, const struct M33 *matx)
     long zoom = camera_zoom / pixel_size;
     long tx = view_width_over_2 + ((epos->x * zoom) >> 16);
     long ty = view_height_over_2 - ((epos->y * zoom) >> 16);
-    long tz = (epos->z + (cells_away << 8)) / 2;
+    long tz = (epos->z + (cells_away << 8)) / 2; // IRRELEVANT FOR ISOMETRIC COLUMNS, JUST THINGS
     if (tz < 32) {
         tz = 0;
     } else
