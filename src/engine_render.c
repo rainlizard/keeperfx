@@ -138,6 +138,10 @@ unsigned char const height_masks[] = {
 };
 
 int triangles_drawn = 0;
+int columns_prepped = 0;
+int columns_drawn = 0;
+
+
 
 struct MinMax minmaxs[MINMAX_LENGTH];
 struct EngineCol ecs1[];
@@ -2878,203 +2882,203 @@ static void do_a_gpoly_gourad_bl(struct EngineCoord *ec1, struct EngineCoord *ec
 
 void do_a_plane_of_engine_columns_cluedo(long stl_x, long stl_y, long plane_start, long plane_end)
 {
-    if ((stl_y < 1) || (stl_y > 254)) {
-        return;
-    }
-    long xaval;
-    long xbval;
-    xaval = plane_start;
-    if (stl_x + plane_start < 1) {
-        xaval = 1 - stl_x;
-    }
-    xbval = plane_end;
-    if (stl_x + plane_end > 255) {
-        xbval = 255 - stl_x;
-    }
-    int xidx;
-    int xdelta;
-    xdelta = xbval - xaval;
-    const struct Column *unrev_colmn;
-    unrev_colmn = get_column(game.unrevealed_column_idx);
-    for (xidx=0; xidx < xdelta; xidx++)
-    {
-        struct Map *cur_mapblk;
-        cur_mapblk = get_map_block_at(stl_x + xaval + xidx, stl_y);
-        // Get solidmasks of sibling columns
-        unsigned short solidmsk_cur_raw;
-        unsigned short solidmsk_cur;
-        unsigned short solidmsk_back;
-        unsigned short solidmsk_front;
-        unsigned short solidmsk_left;
-        unsigned short solidmsk_right;
-        solidmsk_cur_raw = unrev_colmn->solidmask;
-        solidmsk_cur = unrev_colmn->solidmask & 3;
-        solidmsk_back = unrev_colmn->solidmask & 3;
-        solidmsk_right = unrev_colmn->solidmask & 3;
-        solidmsk_front = unrev_colmn->solidmask & 3;
-        solidmsk_left = unrev_colmn->solidmask & 3;
-        // Get column to be drawn
-        const struct Column *cur_colmn;
-        cur_colmn = unrev_colmn;
-        if (map_block_revealed_bit(cur_mapblk, player_bit))
-        {
-            long i;
-            i = get_mapwho_thing_index(cur_mapblk);
-            if (i > 0) {
-              do_map_who(i);
-            }
-            cur_colmn = get_map_column(cur_mapblk);
-            solidmsk_cur_raw = cur_colmn->solidmask;
-            solidmsk_cur = solidmsk_cur_raw;
-            if (solidmsk_cur >= (1<<3))
-            {
-                if (((cur_mapblk->flags & (SlbAtFlg_IsDoor|SlbAtFlg_IsRoom)) == 0) && ((cur_colmn->bitfields & 0xE) == 0)) {
-                    solidmsk_cur &= 3;
-                }
-            }
-        }
-        struct Map *sib_mapblk;
-        sib_mapblk = get_map_block_at(stl_x + xaval + xidx, stl_y - 1);
-        if (map_block_revealed_bit(sib_mapblk, player_bit)) {
-            struct Column *colmn;
-            colmn = get_map_column(sib_mapblk);
-            solidmsk_back = colmn->solidmask;
-            if (solidmsk_back >= (1<<3))
-            {
-                if (((sib_mapblk->flags & (SlbAtFlg_IsDoor|SlbAtFlg_IsRoom)) == 0) && ((colmn->bitfields & 0xE) == 0)) {
-                    solidmsk_back &= 3;
-                }
-            }
-        }
-        sib_mapblk = get_map_block_at(stl_x + xaval + xidx, stl_y + 1);
-        if (map_block_revealed_bit(sib_mapblk, player_bit)) {
-            struct Column *colmn;
-            colmn = get_map_column(sib_mapblk);
-            solidmsk_front = colmn->solidmask;
-            if (solidmsk_front >= (1<<3))
-            {
-                if (((sib_mapblk->flags & (SlbAtFlg_IsDoor|SlbAtFlg_IsRoom)) == 0) && ((colmn->bitfields & 0xE) == 0)) {
-                    solidmsk_front &= 3;
-                }
-            }
-        }
-        sib_mapblk = get_map_block_at(stl_x + xaval + xidx - 1, stl_y);
-        if (map_block_revealed_bit(sib_mapblk, player_bit)) {
-            struct Column *colmn;
-            colmn = get_map_column(sib_mapblk);
-            solidmsk_left = colmn->solidmask;
-            if (solidmsk_left >= (1<<3))
-            {
-                if (((sib_mapblk->flags & (SlbAtFlg_IsDoor|SlbAtFlg_IsRoom)) == 0) && ((colmn->bitfields & 0xE) == 0)) {
-                    solidmsk_left &= 3;
-                }
-            }
-        }
-        sib_mapblk = get_map_block_at(stl_x + xaval + xidx + 1, stl_y);
-        if (map_block_revealed_bit(sib_mapblk, player_bit)) {
-            struct Column *colmn;
-            colmn = get_map_column(sib_mapblk);
-            solidmsk_right = colmn->solidmask;
-            if (solidmsk_right >= (1<<3))
-            {
-                if (((sib_mapblk->flags & (SlbAtFlg_IsDoor|SlbAtFlg_IsRoom)) == 0) && ((colmn->bitfields & 0xE) == 0)) {
-                    solidmsk_right &= 3;
-                }
-            }
-        }
+    // if ((stl_y < 1) || (stl_y > 254)) {
+    //     return;
+    // }
+    // long xaval;
+    // long xbval;
+    // xaval = plane_start;
+    // if (stl_x + plane_start < 1) {
+    //     xaval = 1 - stl_x;
+    // }
+    // xbval = plane_end;
+    // if (stl_x + plane_end > 255) {
+    //     xbval = 255 - stl_x;
+    // }
+    // int xidx;
+    // int xdelta;
+    // xdelta = xbval - xaval;
+    // const struct Column *unrev_colmn;
+    // unrev_colmn = get_column(game.unrevealed_column_idx);
+    // for (xidx=0; xidx < xdelta; xidx++)
+    // {
+    //     struct Map *cur_mapblk;
+    //     cur_mapblk = get_map_block_at(stl_x + xaval + xidx, stl_y);
+    //     // Get solidmasks of sibling columns
+    //     unsigned short solidmsk_cur_raw;
+    //     unsigned short solidmsk_cur;
+    //     unsigned short solidmsk_back;
+    //     unsigned short solidmsk_front;
+    //     unsigned short solidmsk_left;
+    //     unsigned short solidmsk_right;
+    //     solidmsk_cur_raw = unrev_colmn->solidmask;
+    //     solidmsk_cur = unrev_colmn->solidmask & 3;
+    //     solidmsk_back = unrev_colmn->solidmask & 3;
+    //     solidmsk_right = unrev_colmn->solidmask & 3;
+    //     solidmsk_front = unrev_colmn->solidmask & 3;
+    //     solidmsk_left = unrev_colmn->solidmask & 3;
+    //     // Get column to be drawn
+    //     const struct Column *cur_colmn;
+    //     cur_colmn = unrev_colmn;
+    //     if (map_block_revealed_bit(cur_mapblk, player_bit))
+    //     {
+    //         long i;
+    //         i = get_mapwho_thing_index(cur_mapblk);
+    //         if (i > 0) {
+    //           do_map_who(i);
+    //         }
+    //         cur_colmn = get_map_column(cur_mapblk);
+    //         solidmsk_cur_raw = cur_colmn->solidmask;
+    //         solidmsk_cur = solidmsk_cur_raw;
+    //         if (solidmsk_cur >= (1<<3))
+    //         {
+    //             if (((cur_mapblk->flags & (SlbAtFlg_IsDoor|SlbAtFlg_IsRoom)) == 0) && ((cur_colmn->bitfields & 0xE) == 0)) {
+    //                 solidmsk_cur &= 3;
+    //             }
+    //         }
+    //     }
+    //     struct Map *sib_mapblk;
+    //     sib_mapblk = get_map_block_at(stl_x + xaval + xidx, stl_y - 1);
+    //     if (map_block_revealed_bit(sib_mapblk, player_bit)) {
+    //         struct Column *colmn;
+    //         colmn = get_map_column(sib_mapblk);
+    //         solidmsk_back = colmn->solidmask;
+    //         if (solidmsk_back >= (1<<3))
+    //         {
+    //             if (((sib_mapblk->flags & (SlbAtFlg_IsDoor|SlbAtFlg_IsRoom)) == 0) && ((colmn->bitfields & 0xE) == 0)) {
+    //                 solidmsk_back &= 3;
+    //             }
+    //         }
+    //     }
+    //     sib_mapblk = get_map_block_at(stl_x + xaval + xidx, stl_y + 1);
+    //     if (map_block_revealed_bit(sib_mapblk, player_bit)) {
+    //         struct Column *colmn;
+    //         colmn = get_map_column(sib_mapblk);
+    //         solidmsk_front = colmn->solidmask;
+    //         if (solidmsk_front >= (1<<3))
+    //         {
+    //             if (((sib_mapblk->flags & (SlbAtFlg_IsDoor|SlbAtFlg_IsRoom)) == 0) && ((colmn->bitfields & 0xE) == 0)) {
+    //                 solidmsk_front &= 3;
+    //             }
+    //         }
+    //     }
+    //     sib_mapblk = get_map_block_at(stl_x + xaval + xidx - 1, stl_y);
+    //     if (map_block_revealed_bit(sib_mapblk, player_bit)) {
+    //         struct Column *colmn;
+    //         colmn = get_map_column(sib_mapblk);
+    //         solidmsk_left = colmn->solidmask;
+    //         if (solidmsk_left >= (1<<3))
+    //         {
+    //             if (((sib_mapblk->flags & (SlbAtFlg_IsDoor|SlbAtFlg_IsRoom)) == 0) && ((colmn->bitfields & 0xE) == 0)) {
+    //                 solidmsk_left &= 3;
+    //             }
+    //         }
+    //     }
+    //     sib_mapblk = get_map_block_at(stl_x + xaval + xidx + 1, stl_y);
+    //     if (map_block_revealed_bit(sib_mapblk, player_bit)) {
+    //         struct Column *colmn;
+    //         colmn = get_map_column(sib_mapblk);
+    //         solidmsk_right = colmn->solidmask;
+    //         if (solidmsk_right >= (1<<3))
+    //         {
+    //             if (((sib_mapblk->flags & (SlbAtFlg_IsDoor|SlbAtFlg_IsRoom)) == 0) && ((colmn->bitfields & 0xE) == 0)) {
+    //                 solidmsk_right &= 3;
+    //             }
+    //         }
+    //     }
 
-        struct EngineCol *bec;
-        struct EngineCol *fec;
-        bec = &back_ec[xaval + ((MINMAX_LENGTH/2)-1) + xidx];
-        fec = &front_ec[xaval + ((MINMAX_LENGTH/2)-1) + xidx];
-        unsigned short mask;
-        int ncor;
-        for (mask=1,ncor=0; mask <= solidmsk_cur; mask*=2,ncor++)
-        {
-            unsigned short textr_id;
-            struct CubeAttribs *cubed;
-            cubed = &game.cubes_data[cur_colmn->cubes[ncor]];
-            if ((mask & solidmsk_cur) == 0)
-            {
-                continue;
-            }
-            if ((mask & solidmsk_back) == 0)
-            {
-                textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, cubed->texture_id[sideoris[0].field_0]);
-                do_a_gpoly_gourad_tr(&bec[1].cors[ncor+1], &bec[0].cors[ncor+1], &bec[0].cors[ncor],   textr_id, normal_shade_back);
-                do_a_gpoly_gourad_bl(&bec[0].cors[ncor],   &bec[1].cors[ncor],   &bec[1].cors[ncor+1], textr_id, normal_shade_back);
-            }
-            if ((solidmsk_front & mask) == 0)
-            {
-                textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, cubed->texture_id[sideoris[0].field_2]);
-                do_a_gpoly_gourad_tr(&fec[0].cors[ncor+1], &fec[1].cors[ncor+1], &fec[1].cors[ncor],   textr_id, normal_shade_front);
-                do_a_gpoly_gourad_bl(&fec[1].cors[ncor],   &fec[0].cors[ncor],   &fec[0].cors[ncor+1], textr_id, normal_shade_front);
-            }
-            if ((solidmsk_left & mask) == 0)
-            {
-                textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, cubed->texture_id[sideoris[0].field_3]);
-                do_a_gpoly_gourad_tr(&bec[0].cors[ncor+1], &fec[0].cors[ncor+1], &fec[0].cors[ncor],   textr_id, normal_shade_left);
-                do_a_gpoly_gourad_bl(&fec[0].cors[ncor],   &bec[0].cors[ncor],   &bec[0].cors[ncor+1], textr_id, normal_shade_left);
-            }
-            if ((solidmsk_right & mask) == 0)
-            {
-                textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, cubed->texture_id[sideoris[0].field_1]);
-                do_a_gpoly_gourad_tr(&fec[1].cors[ncor+1], &bec[1].cors[ncor+1], &bec[1].cors[ncor],   textr_id, normal_shade_right);
-                do_a_gpoly_gourad_bl(&bec[1].cors[ncor],   &fec[1].cors[ncor],   &fec[1].cors[ncor+1], textr_id, normal_shade_right);
-            }
-        }
+    //     struct EngineCol *bec;
+    //     struct EngineCol *fec;
+    //     bec = &back_ec[xaval + ((MINMAX_LENGTH/2)-1) + xidx];
+    //     fec = &front_ec[xaval + ((MINMAX_LENGTH/2)-1) + xidx];
+    //     unsigned short mask;
+    //     int ncor;
+    //     for (mask=1,ncor=0; mask <= solidmsk_cur; mask*=2,ncor++)
+    //     {
+    //         unsigned short textr_id;
+    //         struct CubeAttribs *cubed;
+    //         cubed = &game.cubes_data[cur_colmn->cubes[ncor]];
+    //         if ((mask & solidmsk_cur) == 0)
+    //         {
+    //             continue;
+    //         }
+    //         if ((mask & solidmsk_back) == 0)
+    //         {
+    //             textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, cubed->texture_id[sideoris[0].field_0]);
+    //             do_a_gpoly_gourad_tr(&bec[1].cors[ncor+1], &bec[0].cors[ncor+1], &bec[0].cors[ncor],   textr_id, normal_shade_back);
+    //             do_a_gpoly_gourad_bl(&bec[0].cors[ncor],   &bec[1].cors[ncor],   &bec[1].cors[ncor+1], textr_id, normal_shade_back);
+    //         }
+    //         if ((solidmsk_front & mask) == 0)
+    //         {
+    //             textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, cubed->texture_id[sideoris[0].field_2]);
+    //             do_a_gpoly_gourad_tr(&fec[0].cors[ncor+1], &fec[1].cors[ncor+1], &fec[1].cors[ncor],   textr_id, normal_shade_front);
+    //             do_a_gpoly_gourad_bl(&fec[1].cors[ncor],   &fec[0].cors[ncor],   &fec[0].cors[ncor+1], textr_id, normal_shade_front);
+    //         }
+    //         if ((solidmsk_left & mask) == 0)
+    //         {
+    //             textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, cubed->texture_id[sideoris[0].field_3]);
+    //             do_a_gpoly_gourad_tr(&bec[0].cors[ncor+1], &fec[0].cors[ncor+1], &fec[0].cors[ncor],   textr_id, normal_shade_left);
+    //             do_a_gpoly_gourad_bl(&fec[0].cors[ncor],   &bec[0].cors[ncor],   &bec[0].cors[ncor+1], textr_id, normal_shade_left);
+    //         }
+    //         if ((solidmsk_right & mask) == 0)
+    //         {
+    //             textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, cubed->texture_id[sideoris[0].field_1]);
+    //             do_a_gpoly_gourad_tr(&fec[1].cors[ncor+1], &bec[1].cors[ncor+1], &bec[1].cors[ncor],   textr_id, normal_shade_right);
+    //             do_a_gpoly_gourad_bl(&bec[1].cors[ncor],   &fec[1].cors[ncor],   &fec[1].cors[ncor+1], textr_id, normal_shade_right);
+    //         }
+    //     }
 
-        ncor = _DK_floor_height[solidmsk_cur];
-        if ((ncor > 0) && (ncor <= COLUMN_STACK_HEIGHT))
-        {
-            int ncor_raw;
-            ncor_raw = _DK_floor_height[solidmsk_cur_raw];
-            if ( (cur_mapblk->flags & SlbAtFlg_Unexplored) != 0 )
-            {
-                unsigned short textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, TEXTURE_LAND_MARKED_LAND);
-                do_a_gpoly_unlit_tr(&bec[0].cors[ncor], &bec[1].cors[ncor], &fec[1].cors[ncor], textr_id);
-                do_a_gpoly_unlit_bl(&fec[1].cors[ncor], &fec[0].cors[ncor], &bec[0].cors[ncor], textr_id);
-            } else
-            if ((cur_mapblk->flags & SlbAtFlg_TaggedValuable) != 0)
-            {
-                unsigned short textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, TEXTURE_LAND_MARKED_GOLD);
-                do_a_gpoly_unlit_tr(&bec[0].cors[ncor], &bec[1].cors[ncor], &fec[1].cors[ncor], textr_id);
-                do_a_gpoly_unlit_bl(&fec[1].cors[ncor], &fec[0].cors[ncor], &bec[0].cors[ncor], textr_id);
-            } else
-             {
-                if ((ncor_raw > 0) && (ncor_raw <= COLUMN_STACK_HEIGHT))
-                {
-                    struct CubeAttribs * cubed = &game.cubes_data[cur_colmn->cubes[ncor_raw-1]];
-                    unsigned short textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, cubed->texture_id[4]);
-                    // Top surface in cluedo mode
-                    do_a_gpoly_gourad_tr(&bec[0].cors[ncor], &bec[1].cors[ncor], &fec[1].cors[ncor], textr_id, -1);
-                    do_a_gpoly_gourad_bl(&fec[1].cors[ncor], &fec[0].cors[ncor], &bec[0].cors[ncor], textr_id, -1);
-                }
-            }
-        } else
-        {
-            if ((cur_mapblk->flags & SlbAtFlg_Unexplored) == 0)
-            {
-                unsigned short textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, cur_colmn->baseblock);
-                do_a_gpoly_gourad_tr(&bec[0].cors[0], &bec[1].cors[0], &fec[1].cors[0], textr_id, -1);
-                do_a_gpoly_gourad_bl(&fec[1].cors[0], &fec[0].cors[0], &bec[0].cors[0], textr_id, -1);
-            } else
-            {
-                unsigned short textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, TEXTURE_LAND_MARKED_LAND);
-                do_a_gpoly_unlit_tr(&bec[0].cors[0], &bec[1].cors[0], &fec[1].cors[0], textr_id);
-                do_a_gpoly_unlit_bl(&fec[1].cors[0], &fec[0].cors[0], &bec[0].cors[0], textr_id);
-            }
-        }
-        ncor = lintel_top_height[solidmsk_cur];
-        if ((ncor > 0) && (ncor <= COLUMN_STACK_HEIGHT))
-        {
-            struct CubeAttribs * cubed;
-            cubed = &game.cubes_data[cur_colmn->cubes[ncor-1]];
-            unsigned short textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, cubed->texture_id[4]);
-            do_a_gpoly_gourad_tr(&bec[0].cors[ncor], &bec[1].cors[ncor], &fec[1].cors[ncor], textr_id, -1);
-            do_a_gpoly_gourad_bl(&fec[1].cors[ncor], &fec[0].cors[ncor], &bec[0].cors[ncor], textr_id, -1);
-        }
-    }
+    //     ncor = _DK_floor_height[solidmsk_cur];
+    //     if ((ncor > 0) && (ncor <= COLUMN_STACK_HEIGHT))
+    //     {
+    //         int ncor_raw;
+    //         ncor_raw = _DK_floor_height[solidmsk_cur_raw];
+    //         if ( (cur_mapblk->flags & SlbAtFlg_Unexplored) != 0 )
+    //         {
+    //             unsigned short textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, TEXTURE_LAND_MARKED_LAND);
+    //             do_a_gpoly_unlit_tr(&bec[0].cors[ncor], &bec[1].cors[ncor], &fec[1].cors[ncor], textr_id);
+    //             do_a_gpoly_unlit_bl(&fec[1].cors[ncor], &fec[0].cors[ncor], &bec[0].cors[ncor], textr_id);
+    //         } else
+    //         if ((cur_mapblk->flags & SlbAtFlg_TaggedValuable) != 0)
+    //         {
+    //             unsigned short textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, TEXTURE_LAND_MARKED_GOLD);
+    //             do_a_gpoly_unlit_tr(&bec[0].cors[ncor], &bec[1].cors[ncor], &fec[1].cors[ncor], textr_id);
+    //             do_a_gpoly_unlit_bl(&fec[1].cors[ncor], &fec[0].cors[ncor], &bec[0].cors[ncor], textr_id);
+    //         } else
+    //          {
+    //             if ((ncor_raw > 0) && (ncor_raw <= COLUMN_STACK_HEIGHT))
+    //             {
+    //                 struct CubeAttribs * cubed = &game.cubes_data[cur_colmn->cubes[ncor_raw-1]];
+    //                 unsigned short textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, cubed->texture_id[4]);
+    //                 // Top surface in cluedo mode
+    //                 do_a_gpoly_gourad_tr(&bec[0].cors[ncor], &bec[1].cors[ncor], &fec[1].cors[ncor], textr_id, -1);
+    //                 do_a_gpoly_gourad_bl(&fec[1].cors[ncor], &fec[0].cors[ncor], &bec[0].cors[ncor], textr_id, -1);
+    //             }
+    //         }
+    //     } else
+    //     {
+    //         if ((cur_mapblk->flags & SlbAtFlg_Unexplored) == 0)
+    //         {
+    //             unsigned short textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, cur_colmn->baseblock);
+    //             do_a_gpoly_gourad_tr(&bec[0].cors[0], &bec[1].cors[0], &fec[1].cors[0], textr_id, -1);
+    //             do_a_gpoly_gourad_bl(&fec[1].cors[0], &fec[0].cors[0], &bec[0].cors[0], textr_id, -1);
+    //         } else
+    //         {
+    //             unsigned short textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, TEXTURE_LAND_MARKED_LAND);
+    //             do_a_gpoly_unlit_tr(&bec[0].cors[0], &bec[1].cors[0], &fec[1].cors[0], textr_id);
+    //             do_a_gpoly_unlit_bl(&fec[1].cors[0], &fec[0].cors[0], &bec[0].cors[0], textr_id);
+    //         }
+    //     }
+    //     ncor = lintel_top_height[solidmsk_cur];
+    //     if ((ncor > 0) && (ncor <= COLUMN_STACK_HEIGHT))
+    //     {
+    //         struct CubeAttribs * cubed;
+    //         cubed = &game.cubes_data[cur_colmn->cubes[ncor-1]];
+    //         unsigned short textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, cubed->texture_id[4]);
+    //         do_a_gpoly_gourad_tr(&bec[0].cors[ncor], &bec[1].cors[ncor], &fec[1].cors[ncor], textr_id, -1);
+    //         do_a_gpoly_gourad_bl(&fec[1].cors[ncor], &fec[0].cors[ncor], &bec[0].cors[ncor], textr_id, -1);
+    //     }
+    // }
 }
 
 void do_a_plane_of_engine_columns_isometric(long stl_x, long stl_y, long plane_start, long plane_end)
@@ -3260,6 +3264,7 @@ void do_a_plane_of_engine_columns_isometric(long stl_x, long stl_y, long plane_s
             do_a_gpoly_gourad_tr(&bec[0].cors[ncor], &bec[1].cors[ncor], &fec[1].cors[ncor], textr_id, -1);
             do_a_gpoly_gourad_bl(&fec[1].cors[ncor], &fec[0].cors[ncor], &bec[0].cors[ncor], textr_id, -1);
         }
+        columns_drawn += 1;
     }
 }
 
@@ -5053,22 +5058,22 @@ static void prepare_draw_plane_of_engine_columns(long aposc, long bposc, long xc
     bpos = bposc;
     back_ec = &ecs1[0];
     front_ec = &ecs2[0];
-    JUSTLOG("front_ec array size: %d", sizeof front_ec / sizeof front_ec[0]);
-    JUSTLOG("front_ec array size: %d", sizeof front_ec);
-    JUSTLOG("back_ec array size: %d", sizeof back_ec / sizeof back_ec[0]);
-    JUSTLOG("back_ec array size: %d", sizeof back_ec);
+    //JUSTLOG("front_ec array size: %d", sizeof front_ec / sizeof front_ec[0]);
+    //JUSTLOG("front_ec array size: %d", sizeof front_ec);
+    //JUSTLOG("back_ec array size: %d", sizeof back_ec / sizeof back_ec[0]);
+    //JUSTLOG("back_ec array size: %d", sizeof back_ec);
 
-    if (lens_mode != 0)
-    {
-        fill_in_points_perspective(xcell, ycell, mm);
-    } else
-    if (settings.video_cluedo_mode)
-    {
-        fill_in_points_cluedo(xcell, ycell, mm);
-    } else
-    {
+    // if (lens_mode != 0)
+    // {
+    //     fill_in_points_perspective(xcell, ycell, mm);
+    // } else
+    // if (settings.video_cluedo_mode)
+    // {
+    //     fill_in_points_cluedo(xcell, ycell, mm);
+    // } else
+    // {
         fill_in_points_isometric(xcell, ycell, mm);
-    }
+    //}
 }
 
 /**
@@ -5113,6 +5118,8 @@ static void draw_plane_of_engine_columns(long aposc, long bposc, long xcell, lon
     //{
         fill_in_points_isometric(xcell, ycell, mm);
         
+        
+
         if (mm->min < mm->max)
         {
           apos = aposc;
@@ -5129,6 +5136,9 @@ static void draw_plane_of_engine_columns(long aposc, long bposc, long xcell, lon
  * @param xcell
  * @param ycell
  */
+
+
+
 static void draw_view_map_plane(long aposc, long bposc, long xcell, long ycell)
 {
     struct MinMax *mm;
@@ -5142,11 +5152,15 @@ static void draw_view_map_plane(long aposc, long bposc, long xcell, long ycell)
 
     //JUSTLOG("minmaxs 0: %d", minmaxs[0]);
     //JUSTLOG("minmaxs 63: %d", minmaxs[31]);
-
+    
+    //columns_prepped = 0;
     prepare_draw_plane_of_engine_columns(aposc, bposc, xcell, ycell, mm);
-
+    
+    columns_drawn = 0;
+    
     for (i = 2*cells_away-1; i > 0; i--) //i = 2*cells_away-1
     {
+
         ycell++;
         bposc -= (map_subtiles_y+1);
         mm++;
@@ -5154,6 +5168,8 @@ static void draw_view_map_plane(long aposc, long bposc, long xcell, long ycell)
         //Draws a single row of engine columns
         draw_plane_of_engine_columns(aposc, bposc, xcell, ycell, mm);
     }
+    //JUSTLOG("columns_prepped: %d", columns_prepped);
+    JUSTLOG("columns_drawn: %d", columns_drawn);
 }
 
 void draw_view(struct Camera *cam, unsigned char a2)
