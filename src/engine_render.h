@@ -383,10 +383,15 @@ extern struct stripey_line colored_stripey_lines[];
 /******************************************************************************/
 DLLIMPORT unsigned char *_DK_getpoly;
 #define getpoly _DK_getpoly
-DLLIMPORT unsigned char _DK_poly_pool[0x40000];
-#define poly_pool _DK_poly_pool
+
+//DLLIMPORT unsigned char _DK_poly_pool[26214400]; //262144 //0x40000
+//#define poly_pool _DK_poly_pool
+extern unsigned char poly_pool[26214400];
+
 DLLIMPORT unsigned char *_DK_poly_pool_end;
 #define poly_pool_end _DK_poly_pool_end
+
+
 DLLIMPORT struct BasicQ *_DK_buckets[BUCKETS_COUNT];
 #define buckets _DK_buckets
 DLLIMPORT Offset _DK_vert_offset[3];

@@ -141,7 +141,7 @@ int triangles_drawn = 0;
 int columns_prepped = 0;
 int columns_drawn = 0;
 
-
+unsigned char poly_pool[26214400];
 
 struct MinMax minmaxs[MINMAX_LENGTH];
 struct EngineCol ecs1[];
