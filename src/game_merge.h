@@ -180,6 +180,7 @@ struct GameAdd {
     long door_sale_percent;
     long room_sale_percent;
     long trap_sale_percent;
+    long max_trap_sale_profit;
     unsigned long pay_day_speed;
     unsigned short disease_to_temple_pct;
     TbBool place_traps_on_subtiles;

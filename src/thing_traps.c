@@ -850,6 +850,23 @@ unsigned long remove_trap(struct Thing *traptng, long *sell_value)
         {
             // Do the refund only if we were able to sell armed trap
             long i = compute_value_percentage(gameadd.traps_config[traptng->model].selling_value, gameadd.trap_sale_percent);
+            struct DungeonAdd* dungeonadd = get_dungeonadd(traptng->owner);
+            // Reduce sell value by an amount depending on MaxTrapSellingProfit
+            
+            long market_value_drops_by = (dungeonadd->manufacture_gold * 100) / gameadd.max_trap_sale_profit;
+            market_value_drops_by = market_value_drops_by << 16;
+
+            
+
+            market_value_drops_by = 100 - (market_value_drops_by); // reverse percentage
+            long curve = 20; // Percent to adjust by [1-100]
+            market_value_drops_by = (market_value_drops_by * curve) / 100;
+            market_value_drops_by = max(0,min(100, market_value_drops_by)); // Clamp [0-100]
+            i = compute_value_percentage(i, market_value_drops_by);
+            if (i == 0) { // Use up remaining profit if percentage is too small
+                i = max(0, gameadd.max_trap_sale_profit - dungeonadd->manufacture_gold);
+            }
+
             if (traptng->trap.num_shots == 0)
             {
                 // Trap not armed - try selling crate from workshop
