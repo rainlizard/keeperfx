@@ -54,6 +54,7 @@
 #include "keeperfx.hpp"
 #include "kjm_input.h"
 #include "post_inc.h"
+#include "gui_topmsg.h"
 
 /******************************************************************************/
 TbBool player_has_won(PlayerNumber plyr_idx)
@@ -776,6 +777,12 @@ void init_player(struct PlayerInfo *player, short no_explore)
     // By default, player is his own ally
     player->allied_players = (1 << player->id_number);
     player->hand_busy_until_turn = 0;
+    
+    if (is_my_player(player)) {
+        //show_onscreen_msg(100, "My player ID = %d", player->id_number);
+        struct PlayerInfoAdd* playeradd = get_playeradd(player->id_number);
+        playeradd->parchment_resets_rotation = is_feature_on(Ft_ParchmentResetsRotation);
+    }
 }
 
 void init_players(void)

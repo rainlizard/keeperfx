@@ -745,9 +745,11 @@ TbBool process_players_global_packet_action(PlayerNumber plyr_idx)
       return 0;
   case PckA_ZoomFromMap:
       set_player_cameras_position(player, subtile_coord_center(pckt->actn_par1), subtile_coord_center(pckt->actn_par2));
-      player->cameras[CamIV_Parchment].orient_a = 0;
-      player->cameras[CamIV_FrontView].orient_a = 0;
-      player->cameras[CamIV_Isometric].orient_a = 0;
+        if (playeradd->parchment_resets_rotation == true) {
+            player->cameras[CamIV_Parchment].orient_a = 0;
+            player->cameras[CamIV_FrontView].orient_a = 0;
+            player->cameras[CamIV_Isometric].orient_a = 0;
+        }
       if (((game.system_flags & GSF_NetworkActive) != 0)
           || (lbDisplay.PhysicalScreenWidth > 320))
       {

@@ -266,6 +266,7 @@ struct PlayerInfoAdd {
     unsigned char roomspace_l_shape;
     TbBool roomspace_horizontal_first;
     TbBool pickup_all_gold;
+    TbBool parchment_resets_rotation; // set by CFG
 };
 
 /******************************************************************************/

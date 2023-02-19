@@ -138,6 +138,7 @@ const struct NamedCommand conf_commands[] = {
   {"DELTA_TIME"                    , 25},
   {"CREATURE_STATUS_SIZE"          , 26},
   {"MAX_ZOOM_DISTANCE"             , 27},
+  {"PARCHMENT_RESETS_ROTATION"     , 28},
   {NULL,                   0},
   };
 
@@ -1070,6 +1071,19 @@ short load_configuration(void)
           } else {
               CONFWRNLOG("Couldn't recognize \"%s\" command parameter in %s file.",COMMAND_TEXT(cmd_num),config_textname);
           }
+          break;
+      case 28: // PARCHMENT_RESETS_ROTATION
+          i = recognize_conf_parameter(buf,&pos,len,logicval_type);
+          if (i <= 0)
+          {
+              CONFWRNLOG("Couldn't recognize \"%s\" command parameter in %s file.",
+                COMMAND_TEXT(cmd_num),config_textname);
+            break;
+          }
+          if (i == 1)
+              features_enabled |= Ft_ParchmentResetsRotation;
+          else
+              features_enabled &= ~Ft_ParchmentResetsRotation;
           break;
       case 0: // comment
           break;

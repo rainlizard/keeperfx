@@ -1072,7 +1072,8 @@ short setup_game(void)
   features_enabled &= ~Ft_SkipSplashScreens; // don't skip splash screens
   features_enabled &= ~Ft_DisableCursorCameraPanning; // don't disable cursor camera panning
   features_enabled |= Ft_DeltaTime; // enable delta time
-
+  features_enabled |= Ft_ParchmentResetsRotation; // enable parchment view resetting camera rotation
+  
   // Configuration file
   if ( !load_configuration() )
   {
@@ -3381,6 +3382,17 @@ TbBool keeper_wait_for_screen_focus(void)
 
 void gameplay_loop_logic()
 {
+    struct PlayerInfo* player = get_my_player();
+    
+    struct PlayerInfoAdd* playeradd1 = get_playeradd(0);
+    struct PlayerInfoAdd* playeradd2 = get_playeradd(1);
+    //show_onscreen_msg(100, "My player ID = %d", player->id_number);
+    if (game.play_gameturn % 40 < 20) {
+        show_onscreen_msg(100, "P1 = %d", playeradd1->parchment_resets_rotation);
+    } else {
+        show_onscreen_msg(100, "P2 = %d", playeradd2->parchment_resets_rotation);
+    }
+
     if (is_feature_on(Ft_DeltaTime) == true) {
         if (gameadd.process_turn_time < 1.0) {
             return;
