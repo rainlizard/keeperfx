@@ -27,7 +27,7 @@
 #include "frontend.h"
 #include "bflib_dernc.h"
 #include "sprites.h"
-
+#include "bflib_datetm.h"
 #include <spng.h>
 #include <json.h>
 #include <json-dom.h>
@@ -242,9 +242,10 @@ void init_custom_sprites(LevelNumber lvnum)
     }
 
     init_pal_conversion();
+    void* timerPointer = codetime_start();
     load_system_sprites(FGrp_FxData);
     load_system_sprites(FGrp_CmpgConfig);
-
+    JUSTLOG("CODETIME: load_system_sprites() = %d", codetime_end(timerPointer));
     char *lvl = prepare_file_fmtpath(get_level_fgroup(lvnum), "map%05lu.zip", lvnum);
     if (add_custom_sprite(lvl))
     {

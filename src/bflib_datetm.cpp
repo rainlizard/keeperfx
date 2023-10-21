@@ -47,6 +47,30 @@ struct FrametimeMeasurements frametime_measurements;
 TimePoint delta_time_previous_timepoint;
 int debug_display_frametime = 0;
 /******************************************************************************/
+class CodeTime {
+private:
+    TimePoint start_time;
+public:
+    CodeTime() : start_time(TimeNow) {}
+
+    int result() const {
+        auto now = TimeNow;
+        long double elapsed_nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(now - start_time).count();
+        return static_cast<int>(elapsed_nanoseconds / 1'000'000.0);  // Converting to milliseconds.
+    }
+};
+
+void* codetime_start() {
+    return new CodeTime();
+}
+
+int codetime_end(void* timerPtr) {
+    CodeTime* timer = static_cast<CodeTime*>(timerPtr);
+    int result = timer->result();
+    delete timer;
+    return result;
+}
+
 void initial_time_point()
 {
   initialized_time_point = TimeNow;

@@ -974,7 +974,9 @@ void init_keeper(void)
     init_spiral_steps();
     init_key_to_strings();
     // Load configs which may have per-campaign part, and even be modified within a level
+    void* timerPointer = codetime_start();
     init_custom_sprites(SPRITE_LAST_LEVEL);
+    JUSTLOG("CODETIME: init_custom_sprites() = %d", codetime_end(timerPointer));
     load_computer_player_config(CnfLd_Standard);
     load_stats_files();
     check_and_auto_fix_stats();
@@ -1201,7 +1203,10 @@ short setup_game(void)
 
   if ( result )
   {
+      void* timerPointer = codetime_start();
       init_keeper();
+      JUSTLOG("CODETIME: init_keeper() = %d", codetime_end(timerPointer));
+      
       switch (start_params.force_ppro_poly)
       {
       case 1:
@@ -4191,8 +4196,10 @@ int LbBullfrogMain(unsigned short argc, char *argv[])
         LbErrorLogClose();
         return 0;
     }
-
+    void* timerPointer = codetime_start();
     retval = setup_game();
+    JUSTLOG("CODETIME: setup_game() = %d", codetime_end(timerPointer));
+
     if (retval)
     {
       if ((install_info.lang_id == Lang_Japanese) ||

@@ -65,6 +65,10 @@ extern int debug_display_frametime;
 extern void initial_time_point();
 extern void frametime_start_measurement(int frametime_kind);
 extern void frametime_end_measurement(int frametime_kind);
+
+extern void* codetime_start();
+extern int codetime_end(void* timerPtr);
+
 extern float get_delta_time();
 
 extern struct FrametimeMeasurements frametime_measurements;
