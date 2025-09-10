@@ -107,6 +107,8 @@ extern TbBool process_players_global_cheats_packet_action(PlayerNumber plyr_idx,
 extern TbBool process_players_dungeon_control_cheats_packet_action(PlayerNumber plyr_idx, struct Packet* pckt);
 extern TbBool change_campaign(const char *cmpgn_fname);
 /******************************************************************************/
+int process_packets_loop_var = 0;
+/******************************************************************************/
 void set_packet_action(struct Packet *pckt, unsigned char pcktype, long par1, long par2, unsigned short par3, unsigned short par4)
 {
     pckt->actn_par1 = par1;
@@ -1563,10 +1565,17 @@ void process_packets(void)
         }
         if (!game.packet_load_enable || game.packet_load_initialized)
         {
-            struct Packet* pckt = get_packet_direct(player->packet_num);
-            if (LbNetwork_Exchange(pckt, game.packets, sizeof(struct Packet)) != 0)
-            {
-                ERRORLOG("LbNetwork_Exchange failed");
+            // Using a unique variable instead of game.play_gameturn just in case
+            process_packets_loop_var += 1;
+            
+            // Simulate dropped packet when 20 turns have passed (only for player 0)
+            if (process_packets_loop_var == 20 && player->id_number == 0) {
+                // Drop packet - do nothing
+            } else {
+                struct Packet* pckt = get_packet_direct(player->packet_num);
+                if (LbNetwork_Exchange(pckt, game.packets, sizeof(struct Packet)) != 0) {
+                    ERRORLOG("LbNetwork_Exchange failed");
+                }
             }
         }
         replace_with_ai(old_active_players);
