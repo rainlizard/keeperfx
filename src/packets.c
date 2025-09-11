@@ -1568,9 +1568,9 @@ void process_packets(void)
             // Using a unique variable instead of game.play_gameturn just in case
             process_packets_loop_var += 1;
             
-            // Simulate dropped packet when 20 turns have passed (only for player 0)
-            if (process_packets_loop_var == 20 && player->id_number == 0) {
-                // Drop packet - do nothing
+            // Simulate dropped packet when 20 turns have passed (only for client)
+            if (process_packets_loop_var == 20 && player->id_number == 1) {
+                // Client drops their packets, falling out of sync with host
             } else {
                 struct Packet* pckt = get_packet_direct(player->packet_num);
                 if (LbNetwork_Exchange(pckt, game.packets, sizeof(struct Packet)) != 0) {
