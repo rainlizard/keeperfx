@@ -183,6 +183,11 @@ void event_initialise_all(void)
 
 long event_move_player_towards_event(struct PlayerInfo *player, long event_idx)
 {
+    if (event_idx < 0 || event_idx >= EVENTS_COUNT) {
+        JUSTLOG("<AI> Invalid event_idx %ld in event_move_player_towards_event, ignoring", event_idx);
+        return 0;
+    }
+
     struct Event* event = &game.event[event_idx];
 
     player->zoom_to_pos_x = event->mappos_x;

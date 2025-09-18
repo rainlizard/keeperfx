@@ -2324,6 +2324,7 @@ void get_dungeon_control_nonaction_inputs(void)
   my_mouse_y = GetMouseY();
   struct PlayerInfo* player = get_my_player();
   struct Packet* pckt = get_packet(my_player_number);
+  // JUSTLOG("<AI> get_dungeon_control_nonaction_inputs: player %d, mouse %ld,%ld", my_player_number, my_mouse_x, my_mouse_y);
   unset_packet_control(pckt, PCtr_MapCoordsValid);
   if (player->work_state == PSt_CtrlDungeon)
   {
@@ -2331,12 +2332,16 @@ void get_dungeon_control_nonaction_inputs(void)
       if (get_player_coords_and_context(&pos, &context))
       {
           set_players_packet_position(pckt, pos.x.val, pos.y.val, context);
+          // JUSTLOG("<AI> Set packet position from coords_and_context: (%ld,%ld)", pos.x.val, pos.y.val);
     }
   } else
   if (screen_to_map(player->acamera, my_mouse_x, my_mouse_y, &pos))
   {
       set_players_packet_position(pckt, pos.x.val, pos.y.val, 0);
       pckt->additional_packet_values &= ~PCAdV_ContextMask; // reset cursor states to 0 (CSt_DefaultArrow)
+      // JUSTLOG("<AI> Set packet position from screen_to_map: (%ld,%ld)", pos.x.val, pos.y.val);
+  } else {
+      // JUSTLOG("<AI> Failed to get valid position for player %d", my_player_number);
   }
   if (lbKeyOn[KC_LALT] && lbKeyOn[KC_X])
   {

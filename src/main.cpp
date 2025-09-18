@@ -1774,6 +1774,13 @@ void clear_game(void)
     SYNCDBG(6,"Starting");
     clear_game_for_summary();
     game.music_track = 0;
+
+    // Initialize packet batching system
+    game.packet_batch_turn = 0;
+    for (int i = 0; i < PACKETS_COUNT; i++) {
+        game.packet_batch_counts[i] = 0;
+    }
+
     clear_map();
     clear_computer();
     clear_script();

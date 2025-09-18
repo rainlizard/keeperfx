@@ -90,6 +90,7 @@
 #include "vidfade.h"
 #include "spdigger_stack.h"
 #include "frontmenu_ingame_map.h"
+#include "map_events.h"
 #include "lua_triggers.h"
 
 #include "keeperfx.hpp"
@@ -98,7 +99,10 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
 /******************************************************************************/
+/******************************************************************************/
+
 #ifdef __cplusplus
 }
 #endif
@@ -107,6 +111,7 @@ extern TbBool process_players_global_cheats_packet_action(PlayerNumber plyr_idx,
 extern TbBool process_players_dungeon_control_cheats_packet_action(PlayerNumber plyr_idx, struct Packet* pckt);
 extern TbBool change_campaign(const char *cmpgn_fname);
 /******************************************************************************/
+
 void set_packet_action(struct Packet *pckt, unsigned char pcktype, long par1, long par2, unsigned short par3, unsigned short par4)
 {
     pckt->actn_par1 = par1;
@@ -718,19 +723,36 @@ TbBool process_players_global_packet_action(PlayerNumber plyr_idx)
       return 0;
   case PckA_PlyrMsgBegin:
       player->allocflags |= PlaF_NewMPMessage;
+      JUSTLOG("<AI> Player %d started message (PlaF_NewMPMessage set)", (int)plyr_idx);
       return 0;
   case PckA_PlyrMsgEnd:
       player->allocflags &= ~PlaF_NewMPMessage;
+      JUSTLOG("<AI> Player %d ended message: '%s' (PlaF_NewMPMessage cleared)", (int)plyr_idx, player->mp_message_text);
       lua_on_chatmsg(player->id_number,player->mp_message_text);
       if (player->mp_message_text[0] != 0)
           memcpy(player->mp_message_text_last, player->mp_message_text, PLAYER_MP_MESSAGE_LEN);
       if (player->mp_message_text[0] == cmd_char)
       {
+          JUSTLOG("<AI> Message starts with cmd_char '%c', checking cmd_exec", cmd_char);
           if ( (!cmd_exec(player->id_number, player->mp_message_text + 1)) || ((game.system_flags & GSF_NetworkActive) != 0) )
+          {
+              JUSTLOG("<AI> Adding command message to display");
               message_add(MsgType_Player, player->id_number, player->mp_message_text);
+          }
+          else
+          {
+              JUSTLOG("<AI> Command executed successfully, NOT adding to display");
+          }
       }
       else if (player->mp_message_text[0] != '\0')
+      {
+          JUSTLOG("<AI> Normal message, adding to display");
           message_add(MsgType_Player, player->id_number, player->mp_message_text);
+      }
+      else
+      {
+          JUSTLOG("<AI> Empty message, not adding to display");
+      }
       memset(player->mp_message_text, 0, PLAYER_MP_MESSAGE_LEN);
       return 0;
   case PckA_PlyrMsgClear:
@@ -910,12 +932,16 @@ TbBool process_players_global_packet_action(PlayerNumber plyr_idx)
       dump_first_held_thing_on_map(plyr_idx, pckt->actn_par1, pckt->actn_par2, 1);
       return 0;
   case PckA_EventBoxTurnOff:
-      if (game.event[pckt->actn_par1].kind == 3)
-      {
-        turn_off_event_box_if_necessary(plyr_idx, pckt->actn_par1);
-      } else
-      {
-        event_delete_event(plyr_idx, pckt->actn_par1);
+      if (pckt->actn_par1 >= 0 && pckt->actn_par1 < EVENTS_COUNT) {
+          if (game.event[pckt->actn_par1].kind == 3)
+          {
+            turn_off_event_box_if_necessary(plyr_idx, pckt->actn_par1);
+          } else
+          {
+            event_delete_event(plyr_idx, pckt->actn_par1);
+          }
+      } else {
+          JUSTLOG("<AI> Invalid event index %ld in PckA_EventBoxTurnOff, ignoring", pckt->actn_par1);
       }
       return 0;
   case PckA_GenericLevelPower:
@@ -1141,11 +1167,15 @@ void process_players_packet(long plyr_idx)
 {
     struct PlayerInfo* player = get_player(plyr_idx);
     struct Packet* pckt = get_packet_direct(player->packet_num);
+    // JUSTLOG("<AI> Processing player %ld packet: action=%d, pos=(%ld,%ld), flags=0x%lX", plyr_idx, (int)pckt->action, pckt->pos_x, pckt->pos_y, pckt->control_flags);
     SYNCDBG(6, "Processing player %ld packet of type %d.", plyr_idx, (int)pckt->action);
     player->input_crtr_control = ((pckt->additional_packet_values & PCAdV_CrtrContrlPressed) != 0);
     player->input_crtr_query = ((pckt->additional_packet_values & PCAdV_CrtrQueryPressed) != 0);
-    if (((player->allocflags & PlaF_NewMPMessage) != 0) && (pckt->action == PckA_PlyrMsgChar))
+    if (pckt->action == PckA_PlyrMsgChar)
     {
+        // For message characters, always process them regardless of local flag state
+        // The flag is managed by PlyrMsgBegin/End packets for the sending player
+        // JUSTLOG("<AI> Player %ld processing message char: action=%d, char=%d", plyr_idx, (int)pckt->action, (int)pckt->actn_par1);
         process_players_message_character(player);
   } else
   if (!process_players_global_packet_action(plyr_idx))
@@ -1550,69 +1580,183 @@ void process_packets(void)
     // Do the network data exchange
     lbDisplay.DrawColour = colours[15][15][15];
     // Exchange packets with the network
+    // 8-turn packet batching system
+    game.packet_batch_turn++;
+    JUSTLOG("<AI> Packet batch turn: %d", game.packet_batch_turn);
+
+    player = get_my_player();
     if (game.game_kind != GKind_LocalGame)
     {
-        player = get_my_player();
         int old_active_players = 0;
         for (i = 0; i < NET_PLAYERS_COUNT; i++)
         {
             if (network_player_active(i))
                 old_active_players++;
         }
-        if (!game.packet_load_enable || game.packet_load_initialized)
-        {
-            struct Packet* pckt = get_packet_direct(player->packet_num);
-            if (LbNetwork_Exchange(pckt, game.packets, sizeof(struct Packet)) != 0)
-            {
-                ERRORLOG("LbNetwork_Exchange failed");
-            }
-        }
         replace_with_ai(old_active_players);
     }
-  // Setting checksum problem flags
-  switch (checksums_different())
-  {
-  case 1:
-      set_flag(game.system_flags, GSF_NetGameNoSync);
-      clear_flag(game.system_flags, GSF_NetSeedNoSync);
-    break;
-  case 2:
-      clear_flag(game.system_flags, GSF_NetGameNoSync);
-      set_flag(game.system_flags, GSF_NetSeedNoSync);
-    break;
-  case 3:
-      set_flag(game.system_flags, GSF_NetGameNoSync);
-      set_flag(game.system_flags, GSF_NetSeedNoSync);
-    break;
-  default:
-      clear_flag(game.system_flags, GSF_NetGameNoSync);
-      clear_flag(game.system_flags, GSF_NetSeedNoSync);
-    break;
-  }
-  // Write packets into file, if requested
-  if ((game.packet_save_enable) && (game.packet_fopened))
-    save_packets();
-//Debug code, to find packet errors
-#if DEBUG_NETWORK_PACKETS
-  write_debug_packets();
-#endif
-  // Process the packets
-  for (i=0; i<PACKETS_COUNT; i++)
-  {
-    player = get_player(i);
-    if (player_exists(player) && ((player->allocflags & PlaF_CompCtrl) == 0))
-      process_players_packet(i);
-  }
-  // Clear all packets
-  clear_packets();
-  if (((game.system_flags & GSF_NetGameNoSync) != 0)
-   || ((game.system_flags & GSF_NetSeedNoSync) != 0))
-  {
-    // Store current checksums before resync for later analysis
-    store_checksums_for_desync_analysis();
-    SYNCDBG(0,"Resyncing");
-    resync_game();
-  }
+
+    // Store current turn's packet in batch for all players
+    for (i = 0; i < PACKETS_COUNT; i++)
+    {
+        player = get_player(i);
+        if (player_exists(player))
+        {
+            struct Packet* current_packet = get_packet_direct(player->packet_num);
+            int batch_index = (game.packet_batch_turn - 1) % PACKET_BATCH_SIZE;
+
+            // Validate batch_index bounds
+            if (batch_index < 0 || batch_index >= PACKET_BATCH_SIZE) {
+                JUSTLOG("<AI> ERROR: Invalid batch_index %d for player %d (should be 0-%d)",
+                        batch_index, i, PACKET_BATCH_SIZE-1);
+                continue;
+            }
+
+            game.packet_batches[i][batch_index] = *current_packet;
+
+            // Track how many packets we have for this player
+            if (batch_index == 0) {
+                game.packet_batch_counts[i] = 1;
+            } else {
+                game.packet_batch_counts[i]++;
+            }
+        }
+    }
+
+    // On batch complete: exchange batches and process all accumulated packets
+    if (game.packet_batch_turn % PACKET_BATCH_SIZE == 0)
+    {
+
+        // Network exchange (only for multiplayer)
+        if (game.game_kind != GKind_LocalGame)
+        {
+            if (!game.packet_load_enable || game.packet_load_initialized)
+            {
+                struct PlayerInfo* my_player = get_my_player();
+                JUSTLOG("<AI> Starting network exchange for batch, my_player=%d", my_player->packet_num);
+
+                // Create a proper BatchPacket structure
+                struct BatchPacket my_batch_packet;
+                my_batch_packet.batch_size = PACKET_BATCH_SIZE;
+                my_batch_packet.player_id = my_player->packet_num;
+                my_batch_packet.batch_checksum = 0; // Simple checksum for now
+
+                // Copy my batch to the BatchPacket structure
+                for (int b = 0; b < PACKET_BATCH_SIZE; b++) {
+                    my_batch_packet.packets[b] = game.packet_batches[my_player->packet_num][b];
+                    JUSTLOG("<AI> Sending batch[%d]: action=%d, par1=%ld", b, (int)my_batch_packet.packets[b].action, my_batch_packet.packets[b].actn_par1);
+                    // Simple checksum calculation
+                    my_batch_packet.batch_checksum += my_batch_packet.packets[b].action + my_batch_packet.packets[b].actn_par1;
+                }
+
+                JUSTLOG("<AI> About to call LbNetwork_Exchange with BatchPacket size %lu", (unsigned long)sizeof(struct BatchPacket));
+                // Buffer to receive BatchPackets from all players
+                struct BatchPacket received_batches[PACKETS_COUNT];
+                memset(received_batches, 0, sizeof(received_batches));
+
+                if (LbNetwork_Exchange(&my_batch_packet, received_batches, sizeof(struct BatchPacket)))
+                {
+                    ERRORLOG("LbNetwork_Exchange failed for batch transmission");
+                }
+                else
+                {
+                    JUSTLOG("<AI> LbNetwork_Exchange succeeded");
+
+                    // Process received BatchPackets from all players
+                    for (i = 0; i < PACKETS_COUNT; i++)
+                    {
+                        player = get_player(i);
+                        if (player_exists(player) && ((player->allocflags & PlaF_CompCtrl) == 0))
+                        {
+                            // Check if we received valid batch data for this player
+                            if (received_batches[i].batch_size == PACKET_BATCH_SIZE && received_batches[i].player_id == i)
+                            {
+                                JUSTLOG("<AI> Processing received batch from player %d (checksum=%u)", i, received_batches[i].batch_checksum);
+
+                                // Copy the received batch for this player
+                                for (int b = 0; b < PACKET_BATCH_SIZE; b++) {
+                                    game.packet_batches[i][b] = received_batches[i].packets[b];
+                                    if (game.packet_batches[i][b].action == PckA_PlyrMsgChar || game.packet_batches[i][b].action == PckA_PlyrMsgBegin || game.packet_batches[i][b].action == PckA_PlyrMsgEnd) {
+                                        JUSTLOG("<AI> Player %d batch[%d]: MESSAGE action=%d, par1=%ld",
+                                               i, b, (int)game.packet_batches[i][b].action, game.packet_batches[i][b].actn_par1);
+                                    }
+                                }
+                                game.packet_batch_counts[i] = PACKET_BATCH_SIZE;
+                                JUSTLOG("<AI> Set player %d count to %d", i, game.packet_batch_counts[i]);
+                            }
+                            else if (player == my_player)
+                            {
+                                // Restore my own packets since network exchange might have corrupted them
+                                JUSTLOG("<AI> Restoring my own player %d packets", my_player->packet_num);
+                                for (int b = 0; b < PACKET_BATCH_SIZE; b++) {
+                                    game.packet_batches[my_player->packet_num][b] = my_batch_packet.packets[b];
+                                }
+                                game.packet_batch_counts[my_player->packet_num] = PACKET_BATCH_SIZE;
+                            }
+                            else
+                            {
+                                JUSTLOG("<AI> No valid batch received for player %d (size=%u, id=%u)",
+                                       i, received_batches[i].batch_size, received_batches[i].player_id);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Write packets into file, if requested
+        if ((game.packet_save_enable) && (game.packet_fopened))
+            save_packets();
+        #if DEBUG_NETWORK_PACKETS
+        write_debug_packets();
+        #endif
+
+        // Process all accumulated packets for each player sequentially
+        JUSTLOG("<AI> Starting to process batched packets");
+
+        // Log current packet counts for all players
+        for (i = 0; i < PACKETS_COUNT; i++) {
+            player = get_player(i);
+            if (player_exists(player) && ((player->allocflags & PlaF_CompCtrl) == 0)) {
+                JUSTLOG("<AI> Player %d has count=%d", i, game.packet_batch_counts[i]);
+            }
+        }
+        for (int batch_turn = 0; batch_turn < PACKET_BATCH_SIZE; batch_turn++)
+        {
+            JUSTLOG("<AI> Starting batch_turn %d", batch_turn);
+            for (i = 0; i < PACKETS_COUNT; i++)
+            {
+                player = get_player(i);
+                if (player_exists(player) && ((player->allocflags & PlaF_CompCtrl) == 0))
+                {
+                    if (batch_turn < game.packet_batch_counts[i])
+                    {
+                        JUSTLOG("<AI> Processing player %d batch_turn %d (count=%d) action=%d", i, batch_turn, game.packet_batch_counts[i], (int)game.packet_batches[i][batch_turn].action);
+                        // Copy batched packet to current packet slot for processing
+                        *get_packet_direct(player->packet_num) = game.packet_batches[i][batch_turn];
+                        process_players_packet(i);
+                    }
+                }
+            }
+            JUSTLOG("<AI> Finished batch_turn %d", batch_turn);
+        }
+        JUSTLOG("<AI> Finished processing batched packets");
+
+        // Clear batch data for next cycle
+        JUSTLOG("<AI> Clearing packet batch counts");
+        for (i = 0; i < PACKETS_COUNT; i++) {
+            if (game.packet_batch_counts[i] > 0) {
+                JUSTLOG("<AI> Clearing player %d count from %d to 0", i, game.packet_batch_counts[i]);
+            }
+            game.packet_batch_counts[i] = 0;
+        }
+        clear_packets();
+    }
+    else
+    {
+        // On non-batch turns: just accumulate, don't process
+        clear_packets();  // Clear current packets since we've copied them to batch
+    }
   SYNCDBG(7,"Finished");
 }
 

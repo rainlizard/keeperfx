@@ -202,7 +202,7 @@ struct NetState
     NetUserId               my_id;              //id for user representing this machine
     int                     seq_nbr;            //sequence number of next frame to be issued
     unsigned                max_players;        //max players that will actually be used
-    char                    msg_buffer[(sizeof(NetFrame) + sizeof(struct Packet)) * PACKETS_COUNT + 1]; //completely estimated for now
+    char                    msg_buffer[(sizeof(NetFrame) + sizeof(struct Packet) * PACKET_BATCH_SIZE) * PACKETS_COUNT + 1]; //expanded for batch support
     char                    msg_buffer_null;    //theoretical safe guard vs non-terminated strings
     TbBool                  locked;             //if set, no players may join
 };
@@ -284,6 +284,7 @@ static void SendClientFrame(const char * send_buf, size_t buf_size, int seq_nbr)
     *(int *) ptr = seq_nbr;
     ptr += 4;
 
+
     memcpy(ptr, send_buf, buf_size);
     ptr += buf_size;
 
@@ -314,6 +315,7 @@ static void SendServerFrame(const void *send_buf, size_t frame_size, int num_fra
     NETDBG(9, "Starting");
 
     ptr = netstate.msg_buffer;
+
     *ptr = NETMSG_FRAME;
     ptr += sizeof(char);
 
@@ -322,6 +324,7 @@ static void SendServerFrame(const void *send_buf, size_t frame_size, int num_fra
 
     *ptr = num_frames;
     ptr += sizeof(char);
+
 
     memcpy(ptr, send_buf, frame_size * num_frames);
     ptr += frame_size * num_frames;
@@ -483,6 +486,7 @@ static void HandleServerFrame(char * ptr, char * end, size_t user_frame_size)
     frame->size = num_user_frames * user_frame_size;
     frame->buffer = (char *) calloc(frame->size, 1);
     frame->seq_nbr = seq_nbr;
+
 
     memcpy(frame->buffer, ptr, frame->size);
 
@@ -684,6 +688,7 @@ TbError LbNetwork_Init(unsigned long srvcindex, unsigned long maxplayrs, struct 
   }
 
   netstate.max_players = maxplayrs;
+
 
   // Initialising the service provider object
   switch (srvcindex)
@@ -1027,6 +1032,23 @@ static void ProcessMessagesUntilNextFrame(NetUserId id, void *serv_buf, size_t f
     }
 }
 
+static void ProcessAvailableMessagesNonBlocking(NetUserId id, void *serv_buf, size_t frame_size)
+{
+    // Check if any messages are immediately available (timeout=0 means don't wait)
+    while (netstate.sp->msgready(id, 0) != 0)
+    {
+        if (ProcessMessage(id, serv_buf, frame_size) == Lb_FAIL)
+        {
+            break;
+        }
+
+        if (    netstate.msg_buffer[0] == NETMSG_FRAME ||
+                netstate.msg_buffer[0] == NETMSG_RESYNC) {
+            break;
+        }
+    }
+}
+
 static void ProcessMessagesUntilNextLoginReply(TbClockMSec timeout, void *server_buf, size_t client_frame_size)
 {
     TbClockMSec start;
@@ -1061,7 +1083,32 @@ static void ConsumeServerFrame(void *server_buf, int frame_size)
 
     netstate.exchg_queue = frame->next;
     netstate.seq_nbr = frame->seq_nbr;
-    memcpy(server_buf, frame->buffer, frame->size);
+
+    // Validate frame data before copying
+    if (frame->buffer == NULL) {
+        JUSTLOG("<AI> ERROR: frame->buffer is NULL in ConsumeServerFrame");
+        memset(server_buf, 0, frame_size);
+        free(frame);
+        return;
+    }
+
+    if (frame->size > 10000) {  // Sanity check - packets should never be this large
+        JUSTLOG("<AI> ERROR: Suspicious frame size %u in ConsumeServerFrame, clearing buffer", frame->size);
+        memset(server_buf, 0, frame_size);
+        free(frame->buffer);
+        free(frame);
+        return;
+    }
+
+    // Copy the smaller of the two sizes to avoid buffer overflow
+    size_t copy_size = (frame->size < (size_t)frame_size) ? frame->size : (size_t)frame_size;
+    memcpy(server_buf, frame->buffer, copy_size);
+
+    // Zero out remaining buffer if frame was smaller than expected
+    if (copy_size < (size_t)frame_size) {
+        memset((char*)server_buf + copy_size, 0, frame_size - copy_size);
+    }
+
     free(frame->buffer);
     free(frame);
 }
@@ -1069,7 +1116,103 @@ static void ConsumeServerFrame(void *server_buf, int frame_size)
 /*
  * Exchange assuming we are at server side
  */
-TbError LbNetwork_ExchangeServer(void *server_buf, size_t client_frame_size)
+TbError LbNetwork_ExchangeServer(void *send_buf, void *server_buf, size_t client_frame_size)
+{
+    //server needs to be careful about how it reads messages
+    for (NetUserId id = 0; id < MAX_N_USERS; ++id)
+    {
+        if (id == netstate.my_id) {
+            continue;
+        }
+
+        if (netstate.users[id].progress == USER_UNUSED) {
+            continue;
+        }
+
+        JUSTLOG("<AI> ExchangeServer: Processing client %d", id);
+
+        if (netstate.users[id].progress == USER_LOGGEDIN)
+        {
+            //if (netstate.seq_nbr >= SCHEDULED_LAG_IN_FRAMES) { //scheduled lag in TCP stream
+                //TODO NET take time to detect a lagger which can then be announced
+                ProcessMessagesUntilNextFrame(id, server_buf, client_frame_size, WAIT_FOR_CLIENT_TIMEOUT_IN_MS);
+            //}
+
+            netstate.seq_nbr += 1;
+            SendServerFrame(send_buf, client_frame_size, CountLoggedInClients() + 1);
+            JUSTLOG("<AI> ExchangeServer: Sent server data to client %d", id);
+        }
+        else
+        {
+            ProcessMessagesUntilNextFrame(id, server_buf, client_frame_size, WAIT_FOR_CLIENT_TIMEOUT_IN_MS);
+            netstate.seq_nbr += 1;
+            SendServerFrame(send_buf, client_frame_size, CountLoggedInClients() + 1);
+            JUSTLOG("<AI> ExchangeServer: Sent server data to non-logged client %d", id);
+        }
+    }
+    //TODO NET deal with case where no new frame is available and game should be stalled
+    netstate.sp->update(OnNewUser);
+
+    assert(UserIdentifiersValid());
+
+    return Lb_OK;
+}
+
+TbError LbNetwork_ExchangeClient(void *send_buf, void *server_buf, size_t client_frame_size)
+{
+    SendClientFrame((char *) send_buf, client_frame_size, netstate.seq_nbr);
+    JUSTLOG("<AI> ExchangeClient: Sent frame to server");
+
+    ProcessMessagesUntilNextFrame(SERVER_ID, server_buf, client_frame_size, 0);
+    JUSTLOG("<AI> ExchangeClient: Processed messages from server");
+
+    if (netstate.exchg_queue == NULL)
+    {
+        //connection lost
+        JUSTLOG("<AI> ExchangeClient: No exchange queue, connection lost");
+        return Lb_FAIL;
+    }
+
+    // most likely overwrites what was sent in SendClientFrame
+    ConsumeServerFrame(server_buf, client_frame_size);
+    JUSTLOG("<AI> ExchangeClient: Consumed server frame");
+
+    //TODO NET deal with case where no new frame is available and game should be stalled
+    netstate.sp->update(OnNewUser);
+
+    if (!UserIdentifiersValid())
+    {
+        fprintf(stderr, "Bad network peer state\n");
+        return Lb_FAIL;
+    }
+
+    return Lb_OK;
+}
+
+/*
+ * send_buf is a buffer inside shared buffer which sent to a server
+ * server_buf is a buffer shared between all clients and server
+ */
+TbError LbNetwork_Exchange(void *send_buf, void *server_buf, size_t client_frame_size)
+{
+    NETDBG(7, "Starting");
+
+    assert(UserIdentifiersValid());
+
+    if (netstate.users[netstate.my_id].progress == USER_SERVER)
+    {
+        return LbNetwork_ExchangeServer(send_buf, server_buf, client_frame_size);
+    }
+    else
+    { // client
+        return LbNetwork_ExchangeClient(send_buf, server_buf, client_frame_size);
+    }
+}
+
+/**
+ * Non-blocking version of LbNetwork_ExchangeServer
+ */
+TbError LbNetwork_ExchangeServerNonBlocking(void *send_buf, void *server_buf, size_t client_frame_size)
 {
     //server needs to be careful about how it reads messages
     for (NetUserId id = 0; id < MAX_N_USERS; ++id)
@@ -1084,19 +1227,18 @@ TbError LbNetwork_ExchangeServer(void *server_buf, size_t client_frame_size)
 
         if (netstate.users[id].progress == USER_LOGGEDIN)
         {
-            //if (netstate.seq_nbr >= SCHEDULED_LAG_IN_FRAMES) { //scheduled lag in TCP stream
-                //TODO NET take time to detect a lagger which can then be announced
-                ProcessMessagesUntilNextFrame(id, server_buf, client_frame_size, WAIT_FOR_CLIENT_TIMEOUT_IN_MS);
-            //}
+            // Non-blocking: only process immediately available messages
+            ProcessAvailableMessagesNonBlocking(id, server_buf, client_frame_size);
 
             netstate.seq_nbr += 1;
-            SendServerFrame(server_buf, client_frame_size, CountLoggedInClients() + 1);
+            SendServerFrame(send_buf, client_frame_size, CountLoggedInClients() + 1);
         }
         else
         {
-            ProcessMessagesUntilNextFrame(id, server_buf, client_frame_size, WAIT_FOR_CLIENT_TIMEOUT_IN_MS);
+            // Non-blocking: only process immediately available messages
+            ProcessAvailableMessagesNonBlocking(id, server_buf, client_frame_size);
             netstate.seq_nbr += 1;
-            SendServerFrame(server_buf, client_frame_size, CountLoggedInClients() + 1);
+            SendServerFrame(send_buf, client_frame_size, CountLoggedInClients() + 1);
         }
     }
     //TODO NET deal with case where no new frame is available and game should be stalled
@@ -1107,10 +1249,14 @@ TbError LbNetwork_ExchangeServer(void *server_buf, size_t client_frame_size)
     return Lb_OK;
 }
 
-TbError LbNetwork_ExchangeClient(void *send_buf, void *server_buf, size_t client_frame_size)
+/**
+ * Non-blocking version of LbNetwork_ExchangeClient
+ */
+TbError LbNetwork_ExchangeClientNonBlocking(void *send_buf, void *server_buf, size_t client_frame_size)
 {
     SendClientFrame((char *) send_buf, client_frame_size, netstate.seq_nbr);
-    ProcessMessagesUntilNextFrame(SERVER_ID, server_buf, client_frame_size, 0);
+    // Non-blocking: only process immediately available messages
+    ProcessAvailableMessagesNonBlocking(SERVER_ID, server_buf, client_frame_size);
 
     if (netstate.exchg_queue == NULL)
     {
@@ -1132,25 +1278,25 @@ TbError LbNetwork_ExchangeClient(void *send_buf, void *server_buf, size_t client
     return Lb_OK;
 }
 
-/*
- * send_buf is a buffer inside shared buffer which sent to a server
- * server_buf is a buffer shared between all clients and server
+/**
+ * Non-blocking version of LbNetwork_Exchange
  */
-TbError LbNetwork_Exchange(void *send_buf, void *server_buf, size_t client_frame_size)
+TbError LbNetwork_ExchangeNonBlocking(void *send_buf, void *server_buf, size_t client_frame_size)
 {
-    NETDBG(7, "Starting");
+    NETDBG(7, "Starting non-blocking");
 
     assert(UserIdentifiersValid());
 
     if (netstate.users[netstate.my_id].progress == USER_SERVER)
     {
-        return LbNetwork_ExchangeServer(server_buf, client_frame_size);
+        return LbNetwork_ExchangeServerNonBlocking(send_buf, server_buf, client_frame_size);
     }
     else
     { // client
-        return LbNetwork_ExchangeClient(send_buf, server_buf, client_frame_size);
+        return LbNetwork_ExchangeClientNonBlocking(send_buf, server_buf, client_frame_size);
     }
 }
+
 
 static const size_t CHUNK_SIZE = 1024 * 32; // Size of each data chunk in bytes (32KB) for both sending and receiving
 static const int RECEIVE_CHUNKS_PER_LOOP = 10; // Chunks to process per receive loop iteration

@@ -245,6 +245,8 @@ enum ChecksumKind {
 
 #define INVALID_PACKET (&bad_packet)
 
+#define PACKET_BATCH_SIZE 8
+
 /******************************************************************************/
 #pragma pack(1)
 
@@ -268,6 +270,13 @@ struct Packet {
     unsigned char additional_packet_values; // uses the flags and values from TbPacketAddValues
     long actn_par3; //! Players action parameter #3
     long actn_par4; //! Players action parameter #4
+};
+
+struct BatchPacket {
+    struct Packet packets[PACKET_BATCH_SIZE];
+    unsigned char batch_size; //! Number of valid packets in this batch (should be PACKET_BATCH_SIZE)
+    unsigned char player_id;  //! Which player this batch belongs to
+    unsigned short batch_checksum; //! Simple checksum for batch integrity
 };
 
 struct PacketSaveHead {

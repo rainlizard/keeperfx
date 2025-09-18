@@ -251,6 +251,7 @@ void delete_message(unsigned char msg_idx)
 
 void message_add(char type, PlayerNumber plyr_idx, const char *text)
 {
+    JUSTLOG("<AI> message_add called: type=%d, player=%d, text='%s'", (int)type, (int)plyr_idx, text);
     SYNCDBG(2,"Player %d: %s",(int)plyr_idx,text);
     for (int i = GUI_MESSAGES_COUNT - 1; i > 0; i--)
     {

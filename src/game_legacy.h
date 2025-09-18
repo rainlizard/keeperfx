@@ -229,6 +229,12 @@ struct Game {
     unsigned char small_map_state;
     struct Coord3d mouse_light_pos;
     struct Packet packets[PACKETS_COUNT];
+
+    // Packet batching system
+    struct Packet packet_batches[PACKETS_COUNT][PACKET_BATCH_SIZE];  // Store packets per player (max batch size)
+    int packet_batch_counts[PACKETS_COUNT];           // How many packets accumulated per player
+    int packet_batch_turn;                            // Current turn in batch
+
     char active_players_count;
     PlayerNumber neutral_player_num;
     struct GoldLookup gold_lookup[GOLD_LOOKUP_COUNT];
