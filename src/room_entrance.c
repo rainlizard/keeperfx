@@ -352,7 +352,7 @@ void generate_creature_for_dungeon(struct Dungeon * dungeon)
             SYNCDBG(8,"The %s will come to player %d",creature_code_name(crmodel),(int)dungeon->owner);
             generate_creature_at_random_entrance(dungeon, crmodel);
         } else
-        if (lair_space == 0)
+        if (lair_space <= 0)
         {
             SYNCDBG(8,"The %s will come to player %d even though lair is full",creature_code_name(crmodel),(int)dungeon->owner);
             generate_creature_at_random_entrance(dungeon, crmodel);
