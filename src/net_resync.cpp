@@ -83,6 +83,16 @@ struct ResumeMessage {
     TbClockMSec resume_time;
 };
 
+struct UnpauseNow {
+    unsigned char message_type;
+    TbClockMSec wait_ms;
+};
+
+enum {
+    UNPAUSE_PING = 1000000,
+    UNPAUSE_PONG = 2000000
+};
+
 struct TimeSyncComplete {
     unsigned char message_type;
     TbClockMSec client_rtt;
@@ -363,6 +373,108 @@ void resync_game(void) {
 
     clear_flag(game.system_flags, GSF_NetGameNoSync);
     clear_flag(game.system_flags, GSF_NetSeedNoSync);
+}
+
+void LbNetwork_UnpauseTimesync(void) {
+    if (game.game_kind != GKind_MultiGame) {
+        process_pause_packet(0, 0);
+        return;
+    }
+    if (my_player_number == get_host_player_id()) {
+        MULTIPLAYER_LOG("Host: Starting unpause timesync");
+        TbClockMSec rtt[MAX_N_USERS] = {0};
+        TbClockMSec ping_time[MAX_N_USERS] = {0};
+        TbBool done[MAX_N_USERS];
+        UnpauseNow msg;
+        msg.message_type = NETMSG_UNPAUSE_NOW;
+        msg.wait_ms = UNPAUSE_PING;
+        for (NetUserId id = 0; id < MAX_N_USERS; ++id) {
+            done[id] = (id == netstate.my_id || netstate.users[id].progress != USER_LOGGEDIN);
+            if (!done[id]) {
+                ping_time[id] = LbTimerClock();
+                netstate.sp->sendmsg_single(netstate.users[id].id, (const char *)&msg, sizeof(msg));
+            }
+        }
+        TbClockMSec start = LbTimerClock();
+        while (LbTimerClock() - start < 5000) {
+            netstate.sp->update(OnNewUser);
+            TbBool all_done = 1;
+            for (NetUserId id = 0; id < MAX_N_USERS; ++id) {
+                if (done[id]) {
+                    continue;
+                }
+                all_done = 0;
+                while (netstate.sp->msgready(id, 0)) {
+                    size_t sz = netstate.sp->readmsg(id, netstate.msg_buffer, sizeof(netstate.msg_buffer));
+                    if (sz >= sizeof(UnpauseNow) && netstate.msg_buffer[0] == NETMSG_UNPAUSE_NOW) {
+                        UnpauseNow recv;
+                        memcpy(&recv, netstate.msg_buffer, sizeof(recv));
+                        if (recv.wait_ms == UNPAUSE_PONG) {
+                            rtt[id] = LbTimerClock() - ping_time[id];
+                            done[id] = 1;
+                            MULTIPLAYER_LOG("Host: Got pong from client %d, RTT=%lu", id, (unsigned long)rtt[id]);
+                        }
+                    }
+                }
+            }
+            if (all_done) {
+                break;
+            }
+        }
+        TbClockMSec max_rtt = 10;
+        for (NetUserId id = 0; id < MAX_N_USERS; ++id) {
+            if (id == netstate.my_id || netstate.users[id].progress != USER_LOGGEDIN) {
+                continue;
+            }
+            if (!done[id]) {
+                ERRORLOG("Host: Unpause ping timeout for client %d, dropping", id);
+                netstate.sp->drop_user(id);
+            } else if (rtt[id] > max_rtt) {
+                max_rtt = rtt[id];
+            }
+        }
+        MULTIPLAYER_LOG("Host: max_rtt=%lu, sending unpause to clients", (unsigned long)max_rtt);
+        for (NetUserId id = 0; id < MAX_N_USERS; ++id) {
+            if (id == netstate.my_id || netstate.users[id].progress != USER_LOGGEDIN) {
+                continue;
+            }
+            msg.wait_ms = (max_rtt - rtt[id]) / 2;
+            netstate.sp->sendmsg_single(netstate.users[id].id, (const char *)&msg, sizeof(msg));
+        }
+        TbClockMSec end = LbTimerClock() + max_rtt / 2;
+        while (LbTimerClock() < end) {
+        }
+        process_pause_packet(0, 0);
+    } else {
+        MULTIPLAYER_LOG("Client: Waiting for unpause ping");
+        TbBool got_ping = 0;
+        TbClockMSec start = LbTimerClock();
+        while (LbTimerClock() - start < 5000) {
+            netstate.sp->update(OnNewUser);
+            while (netstate.sp->msgready(SERVER_ID, 0)) {
+                size_t sz = netstate.sp->readmsg(SERVER_ID, netstate.msg_buffer, sizeof(netstate.msg_buffer));
+                if (sz >= sizeof(UnpauseNow) && netstate.msg_buffer[0] == NETMSG_UNPAUSE_NOW) {
+                    UnpauseNow msg;
+                    memcpy(&msg, netstate.msg_buffer, sizeof(msg));
+                    if (!got_ping && msg.wait_ms == UNPAUSE_PING) {
+                        MULTIPLAYER_LOG("Client: Got ping, sending pong");
+                        msg.wait_ms = UNPAUSE_PONG;
+                        netstate.sp->sendmsg_single(SERVER_ID, (const char *)&msg, sizeof(msg));
+                        got_ping = 1;
+                        start = LbTimerClock();
+                    } else if (got_ping && msg.wait_ms != UNPAUSE_PING && msg.wait_ms != UNPAUSE_PONG) {
+                        MULTIPLAYER_LOG("Client: Got unpause, wait_ms=%lu", (unsigned long)msg.wait_ms);
+                        TbClockMSec end = LbTimerClock() + msg.wait_ms;
+                        while (LbTimerClock() < end) {
+                        }
+                        process_pause_packet(0, 0);
+                        return;
+                    }
+                }
+            }
+        }
+        ERRORLOG("Client: Timeout waiting for unpause");
+    }
 }
 
 void LbNetwork_TimesyncBarrier(void) {

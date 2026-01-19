@@ -64,6 +64,7 @@ enum NetMessageType {
     NETMSG_TIMESYNC_COMPLETE,
     NETMSG_PAUSE,
     NETMSG_CHATMESSAGE,
+    NETMSG_UNPAUSE_NOW,
 };
 
 typedef TbBool  (*NetNewUserCallback)(NetUserId * assigned_id);

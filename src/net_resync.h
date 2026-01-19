@@ -28,6 +28,7 @@ extern "C" {
 
 TbBool LbNetwork_Resync(void *data_buffer, size_t buffer_length);
 void LbNetwork_TimesyncBarrier(void);
+void LbNetwork_UnpauseTimesync(void);
 void animate_resync_progress_bar(int current_phase, int total_phases);
 void resync_game(void);
 

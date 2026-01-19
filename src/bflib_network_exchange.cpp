@@ -30,6 +30,7 @@
 #include "net_redundant_packets.h"
 #include "game_legacy.h"
 #include "packets.h"
+#include "net_resync.h"
 #include "keeperfx.hpp"
 #include "post_inc.h"
 
@@ -193,15 +194,16 @@ TbError ProcessMessage(NetUserId source, void* server_buf, size_t frame_size) {
     }
     if (type == NETMSG_PAUSE) {
         TbBool pause_state = (TbBool)*ptr;
-        ptr += 1;
-        unsigned long delay_milliseconds = *(unsigned long*)ptr;
-        MULTIPLAYER_LOG("ProcessMessage NETMSG_PAUSE: received pause_state=%d, delay_milliseconds=%lu", pause_state, delay_milliseconds);
-        if (pause_state || delay_milliseconds == 0) {
-            process_pause_packet(pause_state, 0);
-        } else {
-            scheduled_unpause_time = LbTimerClock() + delay_milliseconds;
-            MULTIPLAYER_LOG("ProcessMessage NETMSG_PAUSE: scheduled unpause at time=%lu", scheduled_unpause_time);
+        MULTIPLAYER_LOG("ProcessMessage NETMSG_PAUSE: received pause_state=%d", pause_state);
+        process_pause_packet(pause_state, 0);
+        return Lb_OK;
+    }
+    if (type == NETMSG_UNPAUSE_NOW) {
+        MULTIPLAYER_LOG("ProcessMessage NETMSG_UNPAUSE_NOW: initiating timesync");
+        if (my_player_number == get_host_player_id()) {
+            LbNetwork_BroadcastUnpauseTimesync();
         }
+        LbNetwork_UnpauseTimesync();
         return Lb_OK;
     }
     if (type == NETMSG_CHATMESSAGE) {
@@ -367,22 +369,14 @@ TbError LbNetwork_Exchange(enum NetMessageType msg_type, void *send_buf, void *s
     return Lb_OK;
 }
 
-void LbNetwork_SendPauseImmediate(TbBool pause_state, unsigned long delay_milliseconds) {
-    MULTIPLAYER_LOG("LbNetwork_SendPauseImmediate: sending pause_state=%d, delay_milliseconds=%lu", pause_state, delay_milliseconds);
-
-    char* message_pointer = InitMessageBuffer(NETMSG_PAUSE);
-    *message_pointer = pause_state;
-    message_pointer += 1;
-    *(unsigned long*)message_pointer = delay_milliseconds;
-    message_pointer += sizeof(unsigned long);
-
-    int message_size = message_pointer - netstate.msg_buffer;
-
+void LbNetwork_SendPauseImmediate(TbBool pause_state) {
+    MULTIPLAYER_LOG("LbNetwork_SendPauseImmediate: sending pause_state=%d", pause_state);
+    char* ptr = InitMessageBuffer(NETMSG_PAUSE);
+    *ptr = pause_state;
     for (NetUserId id = 0; id < netstate.max_players; id += 1) {
-        if (id == netstate.my_id || !IsUserActive(id)) {
-            continue;
+        if (id != netstate.my_id && IsUserActive(id)) {
+            netstate.sp->sendmsg_single(id, netstate.msg_buffer, 2);
         }
-        netstate.sp->sendmsg_single(id, netstate.msg_buffer, message_size);
     }
 }
 
@@ -394,6 +388,16 @@ void LbNetwork_SendChatMessageImmediate(int player_id, const char *message) {
     for (NetUserId id = 0; id < netstate.max_players; id += 1) {
         if (id != netstate.my_id && IsUserActive(id)) {
             netstate.sp->sendmsg_single(id, netstate.msg_buffer, 3 + strlen(message));
+        }
+    }
+}
+
+void LbNetwork_BroadcastUnpauseTimesync(void) {
+    MULTIPLAYER_LOG("LbNetwork_BroadcastUnpauseTimesync");
+    InitMessageBuffer(NETMSG_UNPAUSE_NOW);
+    for (NetUserId id = 0; id < netstate.max_players; id += 1) {
+        if (id != netstate.my_id && IsUserActive(id)) {
+            netstate.sp->sendmsg_single(id, netstate.msg_buffer, 1);
         }
     }
 }
