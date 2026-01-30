@@ -1,0 +1,1248 @@
+on: [push]
+jobs:
+  zlib-mingw32:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install mingw-w64
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends mingw-w64
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Checkout zlib
+        uses: actions/checkout@v4
+        with:
+          repository: madler/zlib
+          ref: master
+          path: zlib
+      - name: Configure zlib
+        run: |
+          CMAKE_TOOLCHAIN_FILE=${{github.workspace}}/mingw32.cmake \
+          CMAKE_BUILD_TYPE=Release cmake \
+            -B ${{github.workspace}}/zlib/build \
+            -S ${{github.workspace}}/zlib
+      - name: Build zlib
+        run: cmake --build ${{github.workspace}}/zlib/build --config Release
+      - name: Configure minizip
+        run: |
+          cp ${{github.workspace}}/zlib/build/zconf.h ${{github.workspace}}/zlib/
+          cd ${{github.workspace}}/zlib/contrib/minizip && autoreconf -fvi
+          cd ${{github.workspace}}/zlib/contrib/minizip && CFLAGS="-m32 -march=i686" ./configure --host=i686-w64-mingw32
+      - name: Build minizip
+        run: |
+          make -C ${{github.workspace}}/zlib/contrib/minizip
+      - name: Package files
+        run: |
+            mkdir -p ${{github.workspace}}/zlib/build/include/minizip
+            cp ${{github.workspace}}/zlib/contrib/minizip/.libs/libminizip.a ${{github.workspace}}/zlib/build/
+            cp ${{github.workspace}}/zlib/*.h ${{github.workspace}}/zlib/build/include/
+            cp ${{github.workspace}}/zlib/contrib/minizip/*.h ${{github.workspace}}/zlib/build/include/minizip/
+            cp ${{github.workspace}}/zlib/build/zconf.h ${{github.workspace}}/zlib/build/include/
+            mv ${{github.workspace}}/zlib/build/libzlibstatic.a ${{github.workspace}}/zlib/build/libz.a
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zlib-mingw32
+          path: |
+            ${{github.workspace}}/zlib/build/include
+            ${{github.workspace}}/zlib/build/libz.a
+            ${{github.workspace}}/zlib/build/libminizip.a
+
+  enet-mingw32:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install mingw-w64
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends mingw-w64
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Checkout enet
+        uses: actions/checkout@v4
+        with:
+          repository: lsalzman/enet
+          ref: master
+          path: enet
+      - name: Configure
+        run: |
+          CMAKE_TOOLCHAIN_FILE=${{github.workspace}}/mingw32.cmake \
+          CMAKE_BUILD_TYPE=Release cmake \
+            -B ${{github.workspace}}/enet/build \
+            -S ${{github.workspace}}/enet
+      - name: Build
+        run: cmake --build ${{github.workspace}}/enet/build --config Release
+      - name: Package files
+        run:
+          cp -r ${{github.workspace}}/enet/include ${{github.workspace}}/enet/build/
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: enet-mingw32
+          path: |
+            ${{github.workspace}}/enet/build/include
+            ${{github.workspace}}/enet/build/libenet.a
+
+  spng-mingw32:
+    runs-on: ubuntu-24.04
+    needs: zlib-mingw32
+    steps:
+      - name: Install mingw-w64
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends mingw-w64
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Checkout libspng
+        uses: actions/checkout@v4
+        with:
+          repository: randy408/libspng
+          ref: master
+          path: libspng
+      - name: Download zlib
+        uses: actions/download-artifact@v4
+        with:
+          name: zlib-mingw32
+          path: ${{github.workspace}}/zlib
+      - name: Configure
+        run: |
+          CMAKE_TOOLCHAIN_FILE=${{github.workspace}}/mingw32.cmake \
+          CMAKE_BUILD_TYPE=Release cmake \
+            -B ${{github.workspace}}/libspng/build \
+            -S ${{github.workspace}}/libspng \
+            -DENABLE_OPT=OFF \
+            -DSPNG_SHARED=OFF \
+            -DBUILD_EXAMPLES=OFF \
+            -DZLIB_INCLUDE_DIR=${{github.workspace}}/zlib/include \
+            -DZLIB_LIBRARY=${{github.workspace}}/zlib/libz.a
+      - name: Build
+        run: cmake --build ${{github.workspace}}/libspng/build --config Release
+      - name: Package files
+        run: |
+            mkdir -p ${{github.workspace}}/libspng/build/include/
+            cp ${{github.workspace}}/libspng/spng/*.h ${{github.workspace}}/libspng/build/include/
+            mv ${{github.workspace}}/libspng/build/libspng_static.a ${{github.workspace}}/libspng/build/libspng.a
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spng-mingw32
+          path: |
+            ${{github.workspace}}/libspng/build/include/*.h
+            ${{github.workspace}}/libspng/build/libspng.a
+
+  centijson-mingw32:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install mingw-w64
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends mingw-w64
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Checkout centijson
+        uses: actions/checkout@v4
+        with:
+          repository: mity/centijson
+          ref: master
+          path: centijson
+      - name: Configure
+        run: |
+          CMAKE_TOOLCHAIN_FILE=${{github.workspace}}/mingw32.cmake \
+          CMAKE_BUILD_TYPE=Release cmake \
+            -B ${{github.workspace}}/centijson/build \
+            -S ${{github.workspace}}/centijson
+      - name: Build
+        run: cmake --build ${{github.workspace}}/centijson/build --config Release
+      - name: Package files
+        run: |
+            mkdir -p ${{github.workspace}}/centijson/build/include/
+            cp ${{github.workspace}}/centijson/src/*.h ${{github.workspace}}/centijson/build/include/
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: centijson-mingw32
+          path: |
+            ${{github.workspace}}/centijson/build/include
+            ${{github.workspace}}/centijson/build/libjson.a
+
+  astronomy-mingw32:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install mingw-w64
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends mingw-w64
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Checkout astronomy
+        uses: actions/checkout@v4
+        with:
+          repository: cosinekitty/astronomy
+          ref: master
+          path: astronomy
+      - name: Apply patches
+        run: |
+          cd ${{github.workspace}}/astronomy && git apply ${{github.workspace}}/astronomy-356.patch
+          cd ${{github.workspace}}/astronomy && git apply ${{github.workspace}}/astronomy-357.patch
+      - name: Build
+        run: |
+          mkdir -p ${{github.workspace}}/astronomy/build
+          i686-w64-mingw32-gcc -m32 -march=i686 -c \
+            -I ${{github.workspace}}/astronomy/source/c \
+            -o ${{github.workspace}}/astronomy/build/astronomy.o \
+            ${{github.workspace}}/astronomy/source/c/astronomy.c
+          i686-w64-mingw32-ar crs \
+            ${{github.workspace}}/astronomy/build/libastronomy.a \
+            ${{github.workspace}}/astronomy/build/astronomy.o
+      - name: Package files
+        run: |
+            mkdir -p ${{github.workspace}}/astronomy/build/include/
+            cp ${{github.workspace}}/astronomy/source/c/*.h ${{github.workspace}}/astronomy/build/include/
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: astronomy-mingw32
+          path: |
+            ${{github.workspace}}/astronomy/build/include
+            ${{github.workspace}}/astronomy/build/libastronomy.a
+
+  tomlc99-mingw32:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install mingw-w64
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends mingw-w64
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Checkout tomlc99
+        uses: actions/checkout@v4
+        with:
+          repository: cktan/tomlc99
+          ref: master
+          path: tomlc99
+      - name: Build
+        run: |
+          CC=i686-w64-mingw32-gcc CFLAGS="-m32 -march=i686" make -C ${{github.workspace}}/tomlc99 libtoml.a
+      - name: Package files
+        run: |
+            mkdir -p ${{github.workspace}}/tomlc99/build/include/
+            cp ${{github.workspace}}/tomlc99/*.h ${{github.workspace}}/tomlc99/build/include/
+            cp ${{github.workspace}}/tomlc99/libtoml.a ${{github.workspace}}/tomlc99/build/
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tomlc99-mingw32
+          path: |
+            ${{github.workspace}}/tomlc99/build/include
+            ${{github.workspace}}/tomlc99/build/libtoml.a
+
+  ffmpeg-mingw32:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install mingw-w64
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends mingw-w64
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Checkout ffmpeg
+        uses: actions/checkout@v4
+        with:
+          repository: FFmpeg/FFmpeg
+          ref: master
+          path: ffmpeg
+      - name: Configure
+        run: |
+            cd ${{github.workspace}}/ffmpeg && ./configure \
+              --disable-x86asm \
+              --disable-programs \
+              --disable-doc \
+              --disable-devices \
+              --disable-everything \
+              --disable-filters \
+              --disable-static \
+              --disable-avdevice \
+              --disable-swscale \
+              --disable-avfilter \
+              --disable-network \
+              --disable-dwt \
+              --disable-lsp \
+              --disable-faan \
+              --disable-iamf \
+              --disable-pixelutils \
+              --disable-debug \
+              --enable-shared \
+              --enable-small \
+              --enable-decoder=smacker \
+              --enable-decoder=smackaud \
+              --enable-demuxer=smacker \
+              --enable-protocol=file \
+              --arch=i686 \
+              --target-os=mingw32 \
+              --cross-prefix=i686-w64-mingw32- \
+              --enable-cross-compile
+      - name: Build
+        run: |
+            make -C ${{github.workspace}}/ffmpeg \
+              libavformat/libavformat.a \
+              libavcodec/libavcodec.a \
+              libavutil/libavutil.a \
+              libswresample/libswresample.a
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-mingw32
+          path: |
+            ${{github.workspace}}/ffmpeg/libavformat/*.h
+            ${{github.workspace}}/ffmpeg/libavformat/libavformat.a
+            ${{github.workspace}}/ffmpeg/libavcodec/*.h
+            ${{github.workspace}}/ffmpeg/libavcodec/libavcodec.a
+            ${{github.workspace}}/ffmpeg/libavutil/*.h
+            ${{github.workspace}}/ffmpeg/libavutil/libavutil.a
+            ${{github.workspace}}/ffmpeg/libswresample/*.h
+            ${{github.workspace}}/ffmpeg/libswresample/libswresample.a
+
+  openal-mingw32:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install mingw-w64
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends mingw-w64
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Checkout openal
+        uses: actions/checkout@v4
+        with:
+          repository: kcat/openal-soft
+          ref: master
+          path: openal
+      - name: Configure
+        run: |
+          CMAKE_TOOLCHAIN_FILE=${{github.workspace}}/mingw32.cmake \
+          CMAKE_BUILD_TYPE=Release cmake \
+            -B ${{github.workspace}}/openal/build \
+            -S ${{github.workspace}}/openal \
+            -DLIBTYPE=STATIC \
+            -DALSOFT_STATIC_WINPTHREAD=ON \
+            -DALSOFT_EXAMPLES=OFF \
+            -DALSOFT_UTILS=OFF \
+            -DALSOFT_NO_CONFIG_UTIL=ON \
+            -DALSOFT_INSTALL=OFF \
+            -DALSOFT_INSTALL_CONFIG=OFF \
+            -DALSOFT_INSTALL_HRTF_DATA=OFF \
+            -DALSOFT_INSTALL_AMBDEC_PRESETS=OFF \
+            -DALSOFT_INSTALL_EXAMPLES=OFF \
+            -DALSOFT_INSTALL_UTILS=OFF \
+            -DALSOFT_EAX=OFF \
+            -DALSOFT_BACKEND_PIPEWIRE=OFF \
+            -DALSOFT_BACKEND_PULSEAUDIO=OFF \
+            -DALSOFT_BACKEND_ALSA=OFF \
+            -DALSOFT_BACKEND_OSS=OFF \
+            -DALSOFT_BACKEND_SOLARIS=OFF \
+            -DALSOFT_BACKEND_SNDIO=OFF \
+            -DALSOFT_BACKEND_WINMM=OFF \
+            -DALSOFT_BACKEND_DSOUND=ON \
+            -DALSOFT_BACKEND_WASAPI=OFF \
+            -DALSOFT_BACKEND_OTHERIO=OFF \
+            -DALSOFT_BACKEND_JACK=OFF \
+            -DALSOFT_BACKEND_COREAUDIO=OFF \
+            -DALSOFT_BACKEND_OBOE=OFF \
+            -DALSOFT_BACKEND_OPENSL=OFF \
+            -DALSOFT_BACKEND_PORTAUDIO=OFF \
+            -DALSOFT_BACKEND_SDL2=OFF \
+            -DALSOFT_BACKEND_WAVE=OFF \
+            -DALSOFT_EMBED_HRTF_DATA=OFF
+      - name: Build
+        run: cmake --build ${{github.workspace}}/openal/build --config Release
+      - name: Package files
+        run: |
+            mkdir -p ${{github.workspace}}/openal/build
+            cp -r ${{github.workspace}}/openal/include ${{github.workspace}}/openal/build/
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openal-mingw32
+          path: |
+            ${{github.workspace}}/openal/build/libOpenAL32.a
+            ${{github.workspace}}/openal/build/include
+
+  luajit-mingw32:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install mingw-w64 and multilib
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq \
+            --no-install-recommends \
+            mingw-w64 gcc-multilib g++-multilib
+
+      - name: Checkout LuaJIT
+        uses: actions/checkout@v4
+        with:
+          repository: LuaJIT/LuaJIT
+          ref: v2.1
+          path: luajit
+
+      - name: Build LuaJIT
+        run: |
+          cd luajit
+          make BUILDMODE=static HOST_CC="gcc -m32" CC="i686-w64-mingw32-gcc" TARGET_SYS=Windows
+          mkdir -p build/include build/lib
+          cp src/*.h build/include/
+          cp src/libluajit.a build/lib/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: luajit-mingw32
+          path: |
+            luajit/build/include
+            luajit/build/lib
+
+  miniupnpc-mingw32:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install mingw-w64
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends mingw-w64
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Checkout miniupnp
+        uses: actions/checkout@v4
+        with:
+          repository: miniupnp/miniupnp
+          ref: master
+          path: miniupnp
+      - name: Build
+        run: |
+          cd ${{github.workspace}}/miniupnp/miniupnpc
+          CC=i686-w64-mingw32-gcc AR=i686-w64-mingw32-ar CFLAGS="-m32 -march=i686 -DMINIUPNP_STATICLIB" make -f Makefile.mingw libminiupnpc.a
+      - name: Package files
+        run: |
+          mkdir -p ${{github.workspace}}/miniupnp/build/include/miniupnpc
+          cp ${{github.workspace}}/miniupnp/miniupnpc/include/*.h ${{github.workspace}}/miniupnp/build/include/miniupnpc/
+          cp ${{github.workspace}}/miniupnp/miniupnpc/miniupnpcstrings.h ${{github.workspace}}/miniupnp/build/include/miniupnpc/
+          cp ${{github.workspace}}/miniupnp/miniupnpc/libminiupnpc.a ${{github.workspace}}/miniupnp/build/
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: miniupnpc-mingw32
+          path: |
+            ${{github.workspace}}/miniupnp/build/include
+            ${{github.workspace}}/miniupnp/build/libminiupnpc.a
+
+  libnatpmp-mingw32:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install mingw-w64
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends mingw-w64
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Checkout libnatpmp
+        uses: actions/checkout@v4
+        with:
+          repository: miniupnp/libnatpmp
+          ref: master
+          path: libnatpmp
+      - name: Build
+        run: |
+          cd ${{github.workspace}}/libnatpmp
+          i686-w64-mingw32-gcc -m32 -march=i686 -DNATPMP_STATICLIB -DWIN32 -c -o natpmp.o natpmp.c
+          i686-w64-mingw32-gcc -m32 -march=i686 -DNATPMP_STATICLIB -DWIN32 -c -o getgateway.o getgateway.c
+          i686-w64-mingw32-gcc -m32 -march=i686 -DNATPMP_STATICLIB -DWIN32 -c -o wingettimeofday.o wingettimeofday.c
+          i686-w64-mingw32-ar crs libnatpmp.a natpmp.o getgateway.o wingettimeofday.o
+      - name: Package files
+        run: |
+          mkdir -p ${{github.workspace}}/libnatpmp/build/include/natpmp
+          cp ${{github.workspace}}/libnatpmp/*.h ${{github.workspace}}/libnatpmp/build/include/natpmp/
+          cp ${{github.workspace}}/libnatpmp/libnatpmp.a ${{github.workspace}}/libnatpmp/build/
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libnatpmp-mingw32
+          path: |
+            ${{github.workspace}}/libnatpmp/build/include
+            ${{github.workspace}}/libnatpmp/build/libnatpmp.a
+
+  zlib-mingw64:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install mingw-w64
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends mingw-w64
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Checkout zlib
+        uses: actions/checkout@v4
+        with:
+          repository: madler/zlib
+          ref: master
+          path: zlib
+      - name: Configure zlib
+        run: |
+          CMAKE_TOOLCHAIN_FILE=${{github.workspace}}/mingw64.cmake \
+          CMAKE_BUILD_TYPE=Release cmake \
+            -B ${{github.workspace}}/zlib/build \
+            -S ${{github.workspace}}/zlib
+      - name: Build zlib
+        run: cmake --build ${{github.workspace}}/zlib/build --config Release
+      - name: Configure minizip
+        run: |
+          cp ${{github.workspace}}/zlib/build/zconf.h ${{github.workspace}}/zlib/
+          cd ${{github.workspace}}/zlib/contrib/minizip && autoreconf -fvi
+          cd ${{github.workspace}}/zlib/contrib/minizip && CFLAGS="-m64 -march=x86-64" ./configure --host=x86_64-w64-mingw32
+      - name: Build minizip
+        run: |
+          make -C ${{github.workspace}}/zlib/contrib/minizip
+      - name: Package files
+        run: |
+            mkdir -p ${{github.workspace}}/zlib/build/include/minizip
+            cp ${{github.workspace}}/zlib/contrib/minizip/ioapi.o ${{github.workspace}}/zlib/contrib/minizip/ioapi.lib
+            cp ${{github.workspace}}/zlib/contrib/minizip/mztools.o ${{github.workspace}}/zlib/contrib/minizip/mztools.lib
+            cp ${{github.workspace}}/zlib/contrib/minizip/unzip.o ${{github.workspace}}/zlib/contrib/minizip/unzip.lib
+            cp ${{github.workspace}}/zlib/contrib/minizip/zip.o ${{github.workspace}}/zlib/contrib/minizip/zip.lib
+            ar cr ${{github.workspace}}/zlib/build/libminizip.a \
+              ${{github.workspace}}/zlib/contrib/minizip/ioapi.lib \
+              ${{github.workspace}}/zlib/contrib/minizip/mztools.lib \
+              ${{github.workspace}}/zlib/contrib/minizip/unzip.lib \
+              ${{github.workspace}}/zlib/contrib/minizip/zip.lib
+            cp ${{github.workspace}}/zlib/*.h ${{github.workspace}}/zlib/build/include/
+            cp ${{github.workspace}}/zlib/contrib/minizip/*.h ${{github.workspace}}/zlib/build/include/minizip/
+            cp ${{github.workspace}}/zlib/build/zconf.h ${{github.workspace}}/zlib/build/include/
+            mv ${{github.workspace}}/zlib/build/libzlibstatic.a ${{github.workspace}}/zlib/build/libz.a
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zlib-mingw64
+          path: |
+            ${{github.workspace}}/zlib/build/include
+            ${{github.workspace}}/zlib/build/libz.a
+            ${{github.workspace}}/zlib/build/libminizip.a
+
+  enet-mingw64:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install mingw-w64
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends mingw-w64
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Checkout enet
+        uses: actions/checkout@v4
+        with:
+          repository: lsalzman/enet
+          ref: master
+          path: enet
+      - name: Configure
+        run: |
+          CMAKE_TOOLCHAIN_FILE=${{github.workspace}}/mingw64.cmake \
+          CMAKE_BUILD_TYPE=Release cmake \
+            -B ${{github.workspace}}/enet/build \
+            -S ${{github.workspace}}/enet
+      - name: Build
+        run: cmake --build ${{github.workspace}}/enet/build --config Release
+      - name: Package files
+        run:
+          cp -r ${{github.workspace}}/enet/include ${{github.workspace}}/enet/build/
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: enet-mingw64
+          path: |
+            ${{github.workspace}}/enet/build/include
+            ${{github.workspace}}/enet/build/libenet.a
+
+  spng-mingw64:
+    runs-on: ubuntu-24.04
+    needs: zlib-mingw64
+    steps:
+      - name: Install mingw-w64
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends mingw-w64
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Checkout libspng
+        uses: actions/checkout@v4
+        with:
+          repository: randy408/libspng
+          ref: master
+          path: libspng
+      - name: Download zlib
+        uses: actions/download-artifact@v4
+        with:
+          name: zlib-mingw64
+          path: ${{github.workspace}}/zlib
+      - name: Configure
+        run: |
+          CMAKE_TOOLCHAIN_FILE=${{github.workspace}}/mingw64.cmake \
+          CMAKE_BUILD_TYPE=Release cmake \
+            -B ${{github.workspace}}/libspng/build \
+            -S ${{github.workspace}}/libspng \
+            -DSPNG_SHARED=OFF \
+            -DBUILD_EXAMPLES=OFF \
+            -DZLIB_INCLUDE_DIR=${{github.workspace}}/zlib/include \
+            -DZLIB_LIBRARY=${{github.workspace}}/zlib/libz.a
+      - name: Build
+        run: cmake --build ${{github.workspace}}/libspng/build --config Release
+      - name: Package files
+        run: |
+            mkdir -p ${{github.workspace}}/libspng/build/include/
+            cp ${{github.workspace}}/libspng/spng/*.h ${{github.workspace}}/libspng/build/include/
+            mv ${{github.workspace}}/libspng/build/libspng_static.a ${{github.workspace}}/libspng/build/libspng.a
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spng-mingw64
+          path: |
+            ${{github.workspace}}/libspng/build/include/*.h
+            ${{github.workspace}}/libspng/build/libspng.a
+
+  centijson-mingw64:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install mingw-w64
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends mingw-w64
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Checkout centijson
+        uses: actions/checkout@v4
+        with:
+          repository: mity/centijson
+          ref: master
+          path: centijson
+      - name: Configure
+        run: |
+          CMAKE_TOOLCHAIN_FILE=${{github.workspace}}/mingw64.cmake \
+          CMAKE_BUILD_TYPE=Release cmake \
+            -B ${{github.workspace}}/centijson/build \
+            -S ${{github.workspace}}/centijson
+      - name: Build
+        run: cmake --build ${{github.workspace}}/centijson/build --config Release
+      - name: Package files
+        run: |
+            mkdir -p ${{github.workspace}}/centijson/build/include/
+            cp ${{github.workspace}}/centijson/src/*.h ${{github.workspace}}/centijson/build/include/
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: centijson-mingw64
+          path: |
+            ${{github.workspace}}/centijson/build/include
+            ${{github.workspace}}/centijson/build/libjson.a
+
+  astronomy-mingw64:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install mingw-w64
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends mingw-w64
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Checkout astronomy
+        uses: actions/checkout@v4
+        with:
+          repository: cosinekitty/astronomy
+          ref: master
+          path: astronomy
+      - name: Apply patches
+        run: |
+          cd ${{github.workspace}}/astronomy && git apply ${{github.workspace}}/astronomy-356.patch
+          cd ${{github.workspace}}/astronomy && git apply ${{github.workspace}}/astronomy-357.patch
+      - name: Build
+        run: |
+          mkdir -p ${{github.workspace}}/astronomy/build
+          x86_64-w64-mingw32-gcc -c \
+            -I ${{github.workspace}}/astronomy/source/c \
+            -o ${{github.workspace}}/astronomy/build/astronomy.o \
+            ${{github.workspace}}/astronomy/source/c/astronomy.c
+          x86_64-w64-mingw32-ar crs \
+            ${{github.workspace}}/astronomy/build/libastronomy.a \
+            ${{github.workspace}}/astronomy/build/astronomy.o
+      - name: Package files
+        run: |
+            mkdir -p ${{github.workspace}}/astronomy/build/include/
+            cp ${{github.workspace}}/astronomy/source/c/*.h ${{github.workspace}}/astronomy/build/include/
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: astronomy-mingw64
+          path: |
+            ${{github.workspace}}/astronomy/build/include
+            ${{github.workspace}}/astronomy/build/libastronomy.a
+
+  tomlc99-mingw64:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install mingw-w64
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends mingw-w64
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Checkout tomlc99
+        uses: actions/checkout@v4
+        with:
+          repository: cktan/tomlc99
+          ref: master
+          path: tomlc99
+      - name: Build
+        run: |
+          CC=x86_64-w64-mingw32-gcc make -C ${{github.workspace}}/tomlc99 libtoml.a
+      - name: Package files
+        run: |
+            mkdir -p ${{github.workspace}}/tomlc99/build/include/
+            cp ${{github.workspace}}/tomlc99/*.h ${{github.workspace}}/tomlc99/build/include/
+            cp ${{github.workspace}}/tomlc99/libtoml.a ${{github.workspace}}/tomlc99/build/
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tomlc99-mingw64
+          path: |
+            ${{github.workspace}}/tomlc99/build/include
+            ${{github.workspace}}/tomlc99/build/libtoml.a
+
+  ffmpeg-mingw64:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install mingw-w64
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends mingw-w64
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Checkout ffmpeg
+        uses: actions/checkout@v4
+        with:
+          repository: FFmpeg/FFmpeg
+          ref: master
+          path: ffmpeg
+      - name: Configure
+        run: |
+            cd ${{github.workspace}}/ffmpeg && ./configure \
+              --disable-x86asm \
+              --disable-programs \
+              --disable-doc \
+              --disable-devices \
+              --disable-everything \
+              --disable-filters \
+              --disable-static \
+              --disable-avdevice \
+              --disable-swscale \
+              --disable-avfilter \
+              --disable-network \
+              --disable-dwt \
+              --disable-lsp \
+              --disable-faan \
+              --disable-iamf \
+              --disable-pixelutils \
+              --disable-debug \
+              --enable-shared \
+              --enable-small \
+              --enable-decoder=smacker \
+              --enable-decoder=smackaud \
+              --enable-demuxer=smacker \
+              --enable-protocol=file \
+              --arch=x86_64 \
+              --target-os=mingw32 \
+              --cross-prefix=x86_64-w64-mingw32- \
+              --enable-cross-compile
+      - name: Build
+        run: |
+            make -C ${{github.workspace}}/ffmpeg \
+              libavformat/libavformat.a \
+              libavcodec/libavcodec.a \
+              libavutil/libavutil.a \
+              libswresample/libswresample.a
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-mingw64
+          path: |
+            ${{github.workspace}}/ffmpeg/libavformat/*.h
+            ${{github.workspace}}/ffmpeg/libavformat/libavformat.a
+            ${{github.workspace}}/ffmpeg/libavcodec/*.h
+            ${{github.workspace}}/ffmpeg/libavcodec/libavcodec.a
+            ${{github.workspace}}/ffmpeg/libavutil/*.h
+            ${{github.workspace}}/ffmpeg/libavutil/libavutil.a
+            ${{github.workspace}}/ffmpeg/libswresample/*.h
+            ${{github.workspace}}/ffmpeg/libswresample/libswresample.a
+
+  openal-mingw64:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install mingw-w64
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends mingw-w64
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Checkout openal
+        uses: actions/checkout@v4
+        with:
+          repository: kcat/openal-soft
+          ref: master
+          path: openal
+      - name: Configure
+        run: |
+          CMAKE_TOOLCHAIN_FILE=${{github.workspace}}/mingw64.cmake \
+          CMAKE_BUILD_TYPE=Release cmake \
+            -B ${{github.workspace}}/openal/build \
+            -S ${{github.workspace}}/openal \
+            -DLIBTYPE=STATIC \
+            -DALSOFT_STATIC_WINPTHREAD=ON \
+            -DALSOFT_EXAMPLES=OFF \
+            -DALSOFT_UTILS=OFF \
+            -DALSOFT_NO_CONFIG_UTIL=ON \
+            -DALSOFT_INSTALL=OFF \
+            -DALSOFT_INSTALL_CONFIG=OFF \
+            -DALSOFT_INSTALL_HRTF_DATA=OFF \
+            -DALSOFT_INSTALL_AMBDEC_PRESETS=OFF \
+            -DALSOFT_INSTALL_EXAMPLES=OFF \
+            -DALSOFT_INSTALL_UTILS=OFF \
+            -DALSOFT_EAX=OFF \
+            -DALSOFT_BACKEND_PIPEWIRE=OFF \
+            -DALSOFT_BACKEND_PULSEAUDIO=OFF \
+            -DALSOFT_BACKEND_ALSA=OFF \
+            -DALSOFT_BACKEND_OSS=OFF \
+            -DALSOFT_BACKEND_SOLARIS=OFF \
+            -DALSOFT_BACKEND_SNDIO=OFF \
+            -DALSOFT_BACKEND_WINMM=OFF \
+            -DALSOFT_BACKEND_DSOUND=ON \
+            -DALSOFT_BACKEND_WASAPI=OFF \
+            -DALSOFT_BACKEND_OTHERIO=OFF \
+            -DALSOFT_BACKEND_JACK=OFF \
+            -DALSOFT_BACKEND_COREAUDIO=OFF \
+            -DALSOFT_BACKEND_OBOE=OFF \
+            -DALSOFT_BACKEND_OPENSL=OFF \
+            -DALSOFT_BACKEND_PORTAUDIO=OFF \
+            -DALSOFT_BACKEND_SDL2=OFF \
+            -DALSOFT_BACKEND_WAVE=OFF \
+            -DALSOFT_EMBED_HRTF_DATA=OFF
+      - name: Build
+        run: cmake --build ${{github.workspace}}/openal/build --config Release
+      - name: Package files
+        run: |
+            mkdir -p ${{github.workspace}}/openal/build
+            cp -r ${{github.workspace}}/openal/include ${{github.workspace}}/openal/build/
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openal-mingw64
+          path: |
+            ${{github.workspace}}/openal/build/libOpenAL32.a
+            ${{github.workspace}}/openal/build/include
+
+  luajit-mingw64:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install mingw-w64
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends mingw-w64
+      - name: Checkout LuaJIT
+        uses: actions/checkout@v4
+        with:
+          repository: LuaJIT/LuaJIT
+          ref: v2.1
+          path: luajit
+      - name: Build LuaJIT
+        run: |
+          cd luajit
+          make BUILDMODE=static HOST_CC="gcc" CC="x86_64-w64-mingw32-gcc" TARGET_SYS=Windows
+          mkdir -p build/include build/lib
+          cp src/*.h build/include/
+          cp src/libluajit.a build/lib/
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: luajit-mingw64
+          path: |
+            luajit/build/include
+            luajit/build/lib
+
+  miniupnpc-mingw64:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install mingw-w64
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends mingw-w64
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Checkout miniupnp
+        uses: actions/checkout@v4
+        with:
+          repository: miniupnp/miniupnp
+          ref: master
+          path: miniupnp
+      - name: Build
+        run: |
+          cd ${{github.workspace}}/miniupnp/miniupnpc
+          CC=x86_64-w64-mingw32-gcc AR=x86_64-w64-mingw32-ar CFLAGS="-DMINIUPNP_STATICLIB" make -f Makefile.mingw libminiupnpc.a
+      - name: Package files
+        run: |
+          mkdir -p ${{github.workspace}}/miniupnp/build/include/miniupnpc
+          cp ${{github.workspace}}/miniupnp/miniupnpc/include/*.h ${{github.workspace}}/miniupnp/build/include/miniupnpc/
+          cp ${{github.workspace}}/miniupnp/miniupnpc/miniupnpcstrings.h ${{github.workspace}}/miniupnp/build/include/miniupnpc/
+          cp ${{github.workspace}}/miniupnp/miniupnpc/libminiupnpc.a ${{github.workspace}}/miniupnp/build/
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: miniupnpc-mingw64
+          path: |
+            ${{github.workspace}}/miniupnp/build/include
+            ${{github.workspace}}/miniupnp/build/libminiupnpc.a
+
+  libnatpmp-mingw64:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install mingw-w64
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends mingw-w64
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Checkout libnatpmp
+        uses: actions/checkout@v4
+        with:
+          repository: miniupnp/libnatpmp
+          ref: master
+          path: libnatpmp
+      - name: Build
+        run: |
+          cd ${{github.workspace}}/libnatpmp
+          x86_64-w64-mingw32-gcc -DNATPMP_STATICLIB -DWIN32 -c -o natpmp.o natpmp.c
+          x86_64-w64-mingw32-gcc -DNATPMP_STATICLIB -DWIN32 -c -o getgateway.o getgateway.c
+          x86_64-w64-mingw32-gcc -DNATPMP_STATICLIB -DWIN32 -c -o wingettimeofday.o wingettimeofday.c
+          x86_64-w64-mingw32-ar crs libnatpmp.a natpmp.o getgateway.o wingettimeofday.o
+      - name: Package files
+        run: |
+          mkdir -p ${{github.workspace}}/libnatpmp/build/include/natpmp
+          cp ${{github.workspace}}/libnatpmp/*.h ${{github.workspace}}/libnatpmp/build/include/natpmp/
+          cp ${{github.workspace}}/libnatpmp/libnatpmp.a ${{github.workspace}}/libnatpmp/build/
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libnatpmp-mingw64
+          path: |
+            ${{github.workspace}}/libnatpmp/build/include
+            ${{github.workspace}}/libnatpmp/build/libnatpmp.a
+
+  centijson-lin64:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Checkout centijson
+        uses: actions/checkout@v4
+        with:
+          repository: mity/centijson
+          ref: master
+          path: centijson
+      - name: Configure
+        run: |
+          CMAKE_BUILD_TYPE=Release cmake \
+            -B ${{github.workspace}}/centijson/build \
+            -S ${{github.workspace}}/centijson
+      - name: Build
+        run: cmake --build ${{github.workspace}}/centijson/build --config Release
+      - name: Package files
+        run: |
+            mkdir -p ${{github.workspace}}/centijson/build/include/
+            cp ${{github.workspace}}/centijson/src/*.h ${{github.workspace}}/centijson/build/include/
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: centijson-lin64
+          path: |
+            ${{github.workspace}}/centijson/build/include
+            ${{github.workspace}}/centijson/build/libjson.a
+
+  astronomy-lin64:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Checkout astronomy
+        uses: actions/checkout@v4
+        with:
+          repository: cosinekitty/astronomy
+          ref: master
+          path: astronomy
+      - name: Apply patches
+        run: |
+          cd ${{github.workspace}}/astronomy && git apply ${{github.workspace}}/astronomy-356.patch
+          cd ${{github.workspace}}/astronomy && git apply ${{github.workspace}}/astronomy-357.patch
+      - name: Build
+        run: |
+          mkdir -p ${{github.workspace}}/astronomy/build
+          gcc -c \
+            -I ${{github.workspace}}/astronomy/source/c \
+            -o ${{github.workspace}}/astronomy/build/astronomy.o \
+            ${{github.workspace}}/astronomy/source/c/astronomy.c
+          ar crs \
+            ${{github.workspace}}/astronomy/build/libastronomy.a \
+            ${{github.workspace}}/astronomy/build/astronomy.o
+      - name: Package files
+        run: |
+            mkdir -p ${{github.workspace}}/astronomy/build/include/
+            cp ${{github.workspace}}/astronomy/source/c/*.h ${{github.workspace}}/astronomy/build/include/
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: astronomy-lin64
+          path: |
+            ${{github.workspace}}/astronomy/build/include
+            ${{github.workspace}}/astronomy/build/libastronomy.a
+
+  tomlc99-lin64:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Checkout tomlc99
+        uses: actions/checkout@v4
+        with:
+          repository: cktan/tomlc99
+          ref: master
+          path: tomlc99
+      - name: Build
+        run: |
+          make -C ${{github.workspace}}/tomlc99 libtoml.a
+      - name: Package files
+        run: |
+            mkdir -p ${{github.workspace}}/tomlc99/build/include/
+            cp ${{github.workspace}}/tomlc99/*.h ${{github.workspace}}/tomlc99/build/include/
+            cp ${{github.workspace}}/tomlc99/libtoml.a ${{github.workspace}}/tomlc99/build/
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tomlc99-lin64
+          path: |
+            ${{github.workspace}}/tomlc99/build/include
+            ${{github.workspace}}/tomlc99/build/libtoml.a
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    needs:
+      - zlib-mingw32
+      - centijson-mingw32
+      - astronomy-mingw32
+      - enet-mingw32
+      - spng-mingw32
+      - tomlc99-mingw32
+      - ffmpeg-mingw32
+      - openal-mingw32
+      - luajit-mingw32
+      - miniupnpc-mingw32
+      - libnatpmp-mingw32
+      - zlib-mingw64
+      - centijson-mingw64
+      - astronomy-mingw64
+      - enet-mingw64
+      - spng-mingw64
+      - tomlc99-mingw64
+      - ffmpeg-mingw64
+      - openal-mingw64
+      - luajit-mingw64
+      - miniupnpc-mingw64
+      - libnatpmp-mingw64
+      - centijson-lin64
+      - astronomy-lin64
+      - tomlc99-lin64
+    steps:
+      - name: Download zlib-mingw32
+        uses: actions/download-artifact@v4
+        with:
+          name: zlib-mingw32
+          path: ${{github.workspace}}/zlib-mingw32
+      - name: Download centijson-mingw32
+        uses: actions/download-artifact@v4
+        with:
+          name: centijson-mingw32
+          path: ${{github.workspace}}/centijson-mingw32
+      - name: Download astronomy-mingw32
+        uses: actions/download-artifact@v4
+        with:
+          name: astronomy-mingw32
+          path: ${{github.workspace}}/astronomy-mingw32
+      - name: Download enet-mingw32
+        uses: actions/download-artifact@v4
+        with:
+          name: enet-mingw32
+          path: ${{github.workspace}}/enet-mingw32
+      - name: Download spng-mingw32
+        uses: actions/download-artifact@v4
+        with:
+          name: spng-mingw32
+          path: ${{github.workspace}}/spng-mingw32
+      - name: Download tomlc99-mingw32
+        uses: actions/download-artifact@v4
+        with:
+          name: tomlc99-mingw32
+          path: ${{github.workspace}}/tomlc99-mingw32
+      - name: Download ffmpeg-mingw32
+        uses: actions/download-artifact@v4
+        with:
+          name: ffmpeg-mingw32
+          path: ${{github.workspace}}/ffmpeg-mingw32
+      - name: Download openal-mingw32
+        uses: actions/download-artifact@v4
+        with:
+          name: openal-mingw32
+          path: ${{github.workspace}}/openal-mingw32
+      - name: Download luajit-mingw32
+        uses: actions/download-artifact@v4
+        with:
+          name: luajit-mingw32
+          path: ${{github.workspace}}/luajit-mingw32
+      - name: Download miniupnpc-mingw32
+        uses: actions/download-artifact@v4
+        with:
+          name: miniupnpc-mingw32
+          path: ${{github.workspace}}/miniupnpc-mingw32
+      - name: Download libnatpmp-mingw32
+        uses: actions/download-artifact@v4
+        with:
+          name: libnatpmp-mingw32
+          path: ${{github.workspace}}/libnatpmp-mingw32
+
+      - name: Download zlib-mingw64
+        uses: actions/download-artifact@v4
+        with:
+          name: zlib-mingw64
+          path: ${{github.workspace}}/zlib-mingw64
+      - name: Download centijson-mingw64
+        uses: actions/download-artifact@v4
+        with:
+          name: centijson-mingw64
+          path: ${{github.workspace}}/centijson-mingw64
+      - name: Download astronomy-mingw64
+        uses: actions/download-artifact@v4
+        with:
+          name: astronomy-mingw64
+          path: ${{github.workspace}}/astronomy-mingw64
+      - name: Download enet-mingw64
+        uses: actions/download-artifact@v4
+        with:
+          name: enet-mingw64
+          path: ${{github.workspace}}/enet-mingw64
+      - name: Download spng-mingw64
+        uses: actions/download-artifact@v4
+        with:
+          name: spng-mingw64
+          path: ${{github.workspace}}/spng-mingw64
+      - name: Download tomc99-mingw64
+        uses: actions/download-artifact@v4
+        with:
+          name: tomlc99-mingw64
+          path: ${{github.workspace}}/tomlc99-mingw64
+      - name: Download ffmpeg-mingw64
+        uses: actions/download-artifact@v4
+        with:
+          name: ffmpeg-mingw64
+          path: ${{github.workspace}}/ffmpeg-mingw64
+      - name: Download openal-mingw64
+        uses: actions/download-artifact@v4
+        with:
+          name: openal-mingw64
+          path: ${{github.workspace}}/openal-mingw64
+      - name: Download luajit-mingw64
+        uses: actions/download-artifact@v4
+        with:
+          name: luajit-mingw64
+          path: ${{github.workspace}}/luajit-mingw64
+      - name: Download miniupnpc-mingw64
+        uses: actions/download-artifact@v4
+        with:
+          name: miniupnpc-mingw64
+          path: ${{github.workspace}}/miniupnpc-mingw64
+      - name: Download libnatpmp-mingw64
+        uses: actions/download-artifact@v4
+        with:
+          name: libnatpmp-mingw64
+          path: ${{github.workspace}}/libnatpmp-mingw64
+      - name: Download centijson-lin64
+        uses: actions/download-artifact@v4
+        with:
+          name: centijson-lin64
+          path: ${{github.workspace}}/centijson-lin64
+      - name: Download astronomy-lin64
+        uses: actions/download-artifact@v4
+        with:
+          name: astronomy-lin64
+          path: ${{github.workspace}}/astronomy-lin64
+      - name: Download tomlc99-lin64
+        uses: actions/download-artifact@v4
+        with:
+          name: tomlc99-lin64
+          path: ${{github.workspace}}/tomlc99-lin64
+      - name: Create tarballs
+        run: |
+          tar czf ${{github.workspace}}/zlib-mingw32.tar.gz -C ${{github.workspace}}/zlib-mingw32 .
+          tar czf ${{github.workspace}}/centijson-mingw32.tar.gz -C ${{github.workspace}}/centijson-mingw32 .
+          tar czf ${{github.workspace}}/astronomy-mingw32.tar.gz -C ${{github.workspace}}/astronomy-mingw32 .
+          tar czf ${{github.workspace}}/enet-mingw32.tar.gz -C ${{github.workspace}}/enet-mingw32 .
+          tar czf ${{github.workspace}}/spng-mingw32.tar.gz -C ${{github.workspace}}/spng-mingw32 .
+          tar czf ${{github.workspace}}/tomlc99-mingw32.tar.gz -C ${{github.workspace}}/tomlc99-mingw32 .
+          tar czf ${{github.workspace}}/ffmpeg-mingw32.tar.gz -C ${{github.workspace}}/ffmpeg-mingw32 .
+          tar czf ${{github.workspace}}/openal-mingw32.tar.gz -C ${{github.workspace}}/openal-mingw32 .
+          tar czf ${{github.workspace}}/luajit-mingw32.tar.gz -C ${{github.workspace}}/luajit-mingw32 .
+          tar czf ${{github.workspace}}/miniupnpc-mingw32.tar.gz -C ${{github.workspace}}/miniupnpc-mingw32 .
+          tar czf ${{github.workspace}}/libnatpmp-mingw32.tar.gz -C ${{github.workspace}}/libnatpmp-mingw32 .
+          tar czf ${{github.workspace}}/zlib-mingw64.tar.gz -C ${{github.workspace}}/zlib-mingw64 .
+          tar czf ${{github.workspace}}/centijson-mingw64.tar.gz -C ${{github.workspace}}/centijson-mingw64 .
+          tar czf ${{github.workspace}}/astronomy-mingw64.tar.gz -C ${{github.workspace}}/astronomy-mingw64 .
+          tar czf ${{github.workspace}}/enet-mingw64.tar.gz -C ${{github.workspace}}/enet-mingw64 .
+          tar czf ${{github.workspace}}/spng-mingw64.tar.gz -C ${{github.workspace}}/spng-mingw64 .
+          tar czf ${{github.workspace}}/tomlc99-mingw64.tar.gz -C ${{github.workspace}}/tomlc99-mingw64 .
+          tar czf ${{github.workspace}}/ffmpeg-mingw64.tar.gz -C ${{github.workspace}}/ffmpeg-mingw64 .
+          tar czf ${{github.workspace}}/openal-mingw64.tar.gz -C ${{github.workspace}}/openal-mingw64 .
+          tar czf ${{github.workspace}}/luajit-mingw64.tar.gz -C ${{github.workspace}}/luajit-mingw64 .
+          tar czf ${{github.workspace}}/miniupnpc-mingw64.tar.gz -C ${{github.workspace}}/miniupnpc-mingw64 .
+          tar czf ${{github.workspace}}/libnatpmp-mingw64.tar.gz -C ${{github.workspace}}/libnatpmp-mingw64 .
+          tar czf ${{github.workspace}}/centijson-lin64.tar.gz -C ${{github.workspace}}/centijson-lin64 .
+          tar czf ${{github.workspace}}/astronomy-lin64.tar.gz -C ${{github.workspace}}/astronomy-lin64 .
+          tar czf ${{github.workspace}}/tomlc99-lin64.tar.gz -C ${{github.workspace}}/tomlc99-lin64 .
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GA_TEST_TOKEN }}
+          make_latest: true
+          files: |
+            ${{github.workspace}}/zlib-mingw32.tar.gz
+            ${{github.workspace}}/centijson-mingw32.tar.gz
+            ${{github.workspace}}/astronomy-mingw32.tar.gz
+            ${{github.workspace}}/enet-mingw32.tar.gz
+            ${{github.workspace}}/spng-mingw32.tar.gz
+            ${{github.workspace}}/tomlc99-mingw32.tar.gz
+            ${{github.workspace}}/ffmpeg-mingw32.tar.gz
+            ${{github.workspace}}/openal-mingw32.tar.gz
+            ${{github.workspace}}/luajit-mingw32.tar.gz
+            ${{github.workspace}}/miniupnpc-mingw32.tar.gz
+            ${{github.workspace}}/libnatpmp-mingw32.tar.gz
+            ${{github.workspace}}/zlib-mingw64.tar.gz
+            ${{github.workspace}}/centijson-mingw64.tar.gz
+            ${{github.workspace}}/astronomy-mingw64.tar.gz
+            ${{github.workspace}}/enet-mingw64.tar.gz
+            ${{github.workspace}}/spng-mingw64.tar.gz
+            ${{github.workspace}}/tomlc99-mingw64.tar.gz
+            ${{github.workspace}}/ffmpeg-mingw64.tar.gz
+            ${{github.workspace}}/openal-mingw64.tar.gz
+            ${{github.workspace}}/luajit-mingw64.tar.gz
+            ${{github.workspace}}/miniupnpc-mingw64.tar.gz
+            ${{github.workspace}}/libnatpmp-mingw64.tar.gz
+            ${{github.workspace}}/centijson-lin64.tar.gz
+            ${{github.workspace}}/astronomy-lin64.tar.gz
+            ${{github.workspace}}/tomlc99-lin64.tar.gz
