@@ -153,15 +153,16 @@ TbError LbNetwork_Create(char *nsname_str, char *plyr_name, uint32_t *plyr_num, 
         return Lb_FAIL;
     }
     std::string host_name(plyr_name);
-    uint16_t resolved_port = external_port;
-    if (resolved_port == 0 && ServerPort > 0)
-        resolved_port = (uint16_t)ServerPort;
-    if (resolved_port == 0)
-        resolved_port = (uint16_t)ENET_DEFAULT_PORT;
-    lan_host_start(host_name.c_str(), resolved_port);
-    std::thread([resolved_port, host_name]() {
+    uint16_t local_port = ENET_DEFAULT_PORT;
+    if (ServerPort > 0)
+        local_port = (uint16_t)ServerPort;
+    uint16_t matchmaking_port = local_port;
+    if (external_port != 0)
+        matchmaking_port = external_port;
+    lan_host_start(host_name.c_str(), local_port);
+    std::thread([matchmaking_port, host_name]() {
         if (matchmaking_connect() == 0)
-            matchmaking_create(host_name.c_str(), (int)resolved_port);
+            matchmaking_create(host_name.c_str(), (int)matchmaking_port);
     }).detach();
     netstate.my_id = SERVER_ID;
     snprintf(netstate.users[netstate.my_id].name, sizeof(netstate.users[netstate.my_id].name), "%s", plyr_name);
