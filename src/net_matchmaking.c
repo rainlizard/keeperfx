@@ -186,6 +186,7 @@ int matchmaking_connect(void)
     curl_easy_setopt(curl_handle, CURLOPT_URL, MATCHMAKING_URL);
     curl_easy_setopt(curl_handle, CURLOPT_CONNECT_ONLY, 2L);
     curl_easy_setopt(curl_handle, CURLOPT_CONNECTTIMEOUT_MS, (long)CONNECT_TIMEOUT_MS);
+    curl_easy_setopt(curl_handle, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
     CURLcode curl_result = curl_easy_perform(curl_handle);
     if (curl_result != CURLE_OK) {
         LbNetLog("Matchmaking: connect to %s failed: %s\n", MATCHMAKING_URL, curl_easy_strerror(curl_result));
