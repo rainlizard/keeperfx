@@ -245,20 +245,20 @@ void frontnet_session_update(void)
       memset(net_session, 0, sizeof(net_session));
       if ( LbNetwork_EnumerateSessions(enum_sessions_callback, 0) )
         ERRORLOG("LbNetwork_EnumerateSessions() failed");
-      matchmaking_refresh_sessions();
-      for (int i = 0; i < matchmaking_session_count && net_number_of_sessions < SESSION_ENTRIES_COUNT; i++)
-          net_session[net_number_of_sessions++] = &matchmaking_sessions[i];
       lan_refresh_sessions();
-      for (int i = 0; i < lan_session_count && net_number_of_sessions < SESSION_ENTRIES_COUNT; i++) {
+      for (int i = 0; i < lan_session_count && net_number_of_sessions < SESSION_ENTRIES_COUNT; i++)
+          net_session[net_number_of_sessions++] = &lan_sessions[i];
+      matchmaking_refresh_sessions();
+      for (int i = 0; i < matchmaking_session_count && net_number_of_sessions < SESSION_ENTRIES_COUNT; i++) {
           int duplicate = 0;
-          for (int j = 0; j < matchmaking_session_count; j++) {
-              if (lan_sessions[i].lobby_id[0] != '\0' && strcmp(lan_sessions[i].lobby_id, matchmaking_sessions[j].lobby_id) == 0) {
+          for (int j = 0; j < lan_session_count; j++) {
+              if (matchmaking_sessions[i].lobby_id[0] != '\0' && strcmp(matchmaking_sessions[i].lobby_id, lan_sessions[j].lobby_id) == 0) {
                   duplicate = 1;
                   break;
               }
           }
           if (!duplicate)
-              net_session[net_number_of_sessions++] = &lan_sessions[i];
+              net_session[net_number_of_sessions++] = &matchmaking_sessions[i];
       }
       last_enum_sessions = LbTimerClock();
 
