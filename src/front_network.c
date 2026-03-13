@@ -44,6 +44,7 @@
 #include "game_merge.h"
 #include "game_legacy.h"
 #include "net_matchmaking.h"
+#include "net_lan.h"
 #include "bflib_enet.h"
 #include "post_inc.h"
 
@@ -247,6 +248,18 @@ void frontnet_session_update(void)
       matchmaking_refresh_sessions();
       for (int i = 0; i < matchmaking_session_count && net_number_of_sessions < SESSION_ENTRIES_COUNT; i++)
           net_session[net_number_of_sessions++] = &matchmaking_sessions[i];
+      lan_refresh_sessions();
+      for (int i = 0; i < lan_session_count && net_number_of_sessions < SESSION_ENTRIES_COUNT; i++) {
+          int duplicate = 0;
+          for (int j = 0; j < matchmaking_session_count; j++) {
+              if (lan_sessions[i].lobby_id[0] != '\0' && strcmp(lan_sessions[i].lobby_id, matchmaking_sessions[j].lobby_id) == 0) {
+                  duplicate = 1;
+                  break;
+              }
+          }
+          if (!duplicate)
+              net_session[net_number_of_sessions++] = &lan_sessions[i];
+      }
       last_enum_sessions = LbTimerClock();
 
       if (net_number_of_sessions == 0)
@@ -422,6 +435,7 @@ void frontnet_start_update(void)
 
     LbNetwork_UpdateInputLagIfHost();
     enet_matchmaking_host_update();
+    lan_host_update();
 }
 
 void display_attempting_to_join_message(void)

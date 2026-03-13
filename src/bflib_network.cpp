@@ -32,6 +32,7 @@
 #include "front_network.h"
 #include "net_received_packets.h"
 #include "net_matchmaking.h"
+#include "net_lan.h"
 #include "bflib_enet.h"
 #include "keeperfx.hpp"
 #include <thread>
@@ -157,9 +158,10 @@ TbError LbNetwork_Create(char *nsname_str, char *plyr_name, uint32_t *plyr_num, 
         resolved_port = (uint16_t)ServerPort;
     if (resolved_port == 0)
         resolved_port = (uint16_t)ENET_DEFAULT_PORT;
+    lan_host_start(host_name.c_str(), resolved_port);
     std::thread([resolved_port, host_name]() {
         if (matchmaking_connect() == 0)
-            matchmaking_create(host_name.c_str(), (int)resolved_port, external_ip);
+            matchmaking_create(host_name.c_str(), (int)resolved_port);
     }).detach();
     netstate.my_id = SERVER_ID;
     snprintf(netstate.users[netstate.my_id].name, sizeof(netstate.users[netstate.my_id].name), "%s", plyr_name);
@@ -205,6 +207,7 @@ TbError LbNetwork_EnableNewPlayers(TbBool allow) {
 }
 
 TbError LbNetwork_Stop(void) {
+    lan_shutdown();
     matchmaking_disconnect();
     if (netstate.sp) {
         netstate.sp->exit();
