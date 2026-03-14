@@ -196,6 +196,8 @@ int matchmaking_connect(void)
         return -1;
     }
     LbNetLog("Matchmaking: connected\n");
+    websocket_send("{\"action\":\"list\",\"version\":\"" MATCHMAKING_VERSION "\"}");
+    last_refresh_tick = SDL_GetTicks();
     SDL_UnlockMutex(mutex);
     return 0;
 }
@@ -218,19 +220,14 @@ void matchmaking_disconnect(void)
 
 void matchmaking_refresh_sessions(void)
 {
-    SDL_LockMutex(mutex);
+    if (!curl_handle || !mutex || SDL_TryLockMutex(mutex) != 0)
+        return;
     if (!curl_handle) {
         SDL_UnlockMutex(mutex);
         return;
     }
     char response_buffer[WEBSOCKET_BUFFER_SIZE];
-    int bytes_received;
-    if (last_refresh_tick == 0) {
-        bytes_received = websocket_exchange("{\"action\":\"list\",\"version\":\"" MATCHMAKING_VERSION "\"}", response_buffer, sizeof(response_buffer));
-        last_refresh_tick = SDL_GetTicks();
-    } else {
-        bytes_received = websocket_receive(response_buffer, sizeof(response_buffer), 0);
-    }
+    int bytes_received = websocket_receive(response_buffer, sizeof(response_buffer), 0);
     if (bytes_received > 0)
         LbNetLog("Matchmaking: list response (%d bytes): %s\n", bytes_received, response_buffer);
     if (bytes_received > 0 && strstr(response_buffer, "\"lobbies\"")) {
