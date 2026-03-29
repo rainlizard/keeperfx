@@ -59,6 +59,7 @@ long network_session_join(void);
 
 TbBool network_player_active(int plyr_idx);
 const char *network_player_name(int plyr_idx);
+long get_multiplayer_player_count(void);
 void sync_various_data();
 unsigned long get_host_player_id(void);
 /******************************************************************************/

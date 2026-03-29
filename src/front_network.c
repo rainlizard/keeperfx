@@ -73,6 +73,23 @@ static int previous_player_count_for_ping_wait = -1;
 }
 #endif
 /******************************************************************************/
+static void clear_multiplayer_lobby_players(void)
+{
+    memset(net_player, 0, sizeof(net_player));
+}
+
+long get_multiplayer_lobby_player_count(void)
+{
+    long player_count = 0;
+    for (long i = 0; i < get_multiplayer_player_count(); i++)
+    {
+        if (net_player[i].name[0] == '\0')
+            break;
+        player_count++;
+    }
+    return player_count;
+}
+
 TbBool frontnet_service_selected(enum FrontendNetService service)
 {
     return (net_service_index_selected == service);
@@ -187,13 +204,13 @@ void frontnet_service_update(void)
 
 void enum_players_callback(struct TbNetworkCallbackData *netcdat, void *a2)
 {
-    if (net_number_of_enum_players >= 4)
+    long player_count = get_multiplayer_lobby_player_count();
+    if (player_count >= get_multiplayer_player_count())
     {
         ERRORLOG("Too many players in enumeration");
         return;
     }
-    snprintf(net_player[net_number_of_enum_players].name, sizeof(struct TbNetworkPlayerName), "%s", netcdat->plyr_name);
-    net_number_of_enum_players++;
+    snprintf(net_player[player_count].name, sizeof(struct TbNetworkPlayerName), "%s", netcdat->plyr_name);
 }
 
 void enum_sessions_callback(struct TbNetworkCallbackData *netcdat, void *ptr)
@@ -277,12 +294,11 @@ void frontnet_session_update(void)
 
     if (net_session_index_active == -1)
     {
-      net_number_of_enum_players = 0;
+      clear_multiplayer_lobby_players();
     } else
     if (LbTimerClock() >= last_enum_players)
     {
-      net_number_of_enum_players = 0;
-      memset(net_player, 0, sizeof(net_player));
+      clear_multiplayer_lobby_players();
       if ( LbNetwork_EnumeratePlayers(net_session[net_session_index_active], enum_players_callback, 0) )
       {
         net_session_index_active = -1;
@@ -292,7 +308,8 @@ void frontnet_session_update(void)
       last_enum_players = LbTimerClock();
     }
 
-    if (net_number_of_enum_players == 0)
+    long player_count = get_multiplayer_lobby_player_count();
+    if (player_count == 0)
     {
       net_player_scroll_offset = 0;
     } else
@@ -300,9 +317,9 @@ void frontnet_session_update(void)
     {
       net_player_scroll_offset = 0;
     } else
-    if (net_player_scroll_offset > net_number_of_enum_players-1)
+    if (net_player_scroll_offset > player_count - 1)
     {
-      net_player_scroll_offset = net_number_of_enum_players-1;
+      net_player_scroll_offset = player_count - 1;
     }
 }
 
@@ -330,11 +347,12 @@ void frontnet_rewite_net_messages(void)
 TbBool frontnet_is_waiting_for_ping_stabilization(void)
 {
     TbClockMSec now;
-    if (net_number_of_enum_players != previous_player_count_for_ping_wait) {
+    long player_count = get_multiplayer_lobby_player_count();
+    if (player_count != previous_player_count_for_ping_wait) {
         frontnet_ping_stabilization_end_time = LbTimerClock() + FRONTNET_PING_STABILIZATION_DELAY_MS;
-        previous_player_count_for_ping_wait = net_number_of_enum_players;
+        previous_player_count_for_ping_wait = player_count;
     }
-    if (net_number_of_enum_players < 2) {
+    if (player_count < 2) {
         return true;
     }
     if (frontnet_ping_stabilization_end_time == 0) {
@@ -358,7 +376,7 @@ void handle_autostart_multiplayer_messaging(void)
 {
     static TbBool send_pending = false;
 
-    if (net_number_of_enum_players < 2) {
+    if (get_multiplayer_lobby_player_count() < 2) {
         send_pending = false;
         return;
     }
@@ -388,8 +406,7 @@ void frontnet_start_update(void)
     SYNCDBG(18,"Starting");
     if (LbTimerClock() >= player_last_time+200)
     {
-      net_number_of_enum_players = 0;
-      memset(net_player, 0, sizeof(net_player));
+      clear_multiplayer_lobby_players();
       if ( LbNetwork_EnumeratePlayers(net_session[net_session_index_active], enum_players_callback, 0) )
       {
         ERRORLOG("LbNetwork_EnumeratePlayers() failed");
@@ -481,6 +498,7 @@ void frontnet_service_setup(void)
 
 void frontnet_session_setup(void)
 {
+    clear_multiplayer_lobby_players();
     if (net_player_name[0] == '\0')
     {
         snprintf(net_player_name, sizeof(net_player_name), "%s", net_config_info.net_player_name);
@@ -498,6 +516,7 @@ void frontnet_session_setup(void)
 void frontnet_start_setup(void)
 {
     frontnet_reset_ping_stabilization();
+    clear_multiplayer_lobby_players();
     memset(&net_screen_packet[my_player_number], 0, sizeof(struct ScreenPacket));
     frontend_alliances = -1;
     net_number_of_messages = 0;

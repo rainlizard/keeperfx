@@ -1578,14 +1578,14 @@ void process_players_creature_control_packet_action(long plyr_idx)
 static void replace_with_ai(int old_active_players)
 {
     int k = 0;
-    for (int i = 0; i < NET_PLAYERS_COUNT; i++)
+    for (long i = 0; i < get_multiplayer_player_count(); i++)
     {
         if (network_player_active(i))
             k++;
     }
     if (old_active_players != k)
     {
-        for (int i = 0; i < NET_PLAYERS_COUNT; i++)
+        for (long i = 0; i < get_multiplayer_player_count(); i++)
         {
             struct PlayerInfo *player = get_player(i);
             if (!network_player_active(player->packet_num))
@@ -1673,7 +1673,7 @@ void process_packets(void)
     if (game.game_kind != GKind_LocalGame)
     {
         int old_active_players = 0;
-        for (i = 0; i < NET_PLAYERS_COUNT; i++)
+        for (i = 0; i < get_multiplayer_player_count(); i++)
         {
             if (network_player_active(i))
                 old_active_players++;
@@ -1781,7 +1781,7 @@ TbBool try_starting_level_from_chat(char* message, long player_id)
 void process_frontend_packets(void)
 {
   long i;
-  for (i=0; i < NET_PLAYERS_COUNT; i++)
+  for (i = 0; i < get_multiplayer_player_count(); i++)
   {
     net_screen_packet[i].networkstatus_flags &= ~0x01;
   }
@@ -1807,7 +1807,7 @@ void process_frontend_packets(void)
 #if DEBUG_NETWORK_PACKETS
   write_debug_screenpackets();
 #endif
-  for (i=0; i < NET_PLAYERS_COUNT; i++)
+  for (i = 0; i < get_multiplayer_player_count(); i++)
   {
     nspckt = &net_screen_packet[i];
     struct PlayerInfo* player = get_player(i);
@@ -1857,7 +1857,7 @@ void process_frontend_packets(void)
   }
   if (frontend_alliances == -1)
     frontend_alliances = 0;
-  for (i=0; i < NET_PLAYERS_COUNT; i++)
+  for (i = 0; i < get_multiplayer_player_count(); i++)
   {
     nspckt = &net_screen_packet[i];
     if ((nspckt->networkstatus_flags & 0x01) == 0)

@@ -57,6 +57,7 @@ void frontnet_start_setup(void);
 void frontnet_service_update(void);
 void frontnet_session_update(void);
 void frontnet_start_update(void);
+long get_multiplayer_lobby_player_count(void);
 TbBool frontnet_is_waiting_for_ping_stabilization(void);
 void frontnet_reset_ping_stabilization(void);
 TbBool frontnet_service_selected(enum FrontendNetService service);

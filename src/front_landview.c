@@ -1067,19 +1067,6 @@ TbBool frontnetmap_load(void)
     lbDisplay.DrawFlags = 0;
     set_music_volume(settings.music_volume);
     frontmap_start_music();
-    if (fe_network_active)
-    {
-        net_number_of_players = 0;
-        for (long i = 0; i < 4; i++)
-        {
-            struct ScreenPacket* nspck = &net_screen_packet[i];
-            if ((nspck->networkstatus_flags & 0x01) != 0)
-              net_number_of_players++;
-        }
-    } else
-    {
-      net_number_of_players = 1;
-    }
     net_map_slap_frame = 0;
     net_map_limp_time = 0;
     update_net_ensigns_visibility();
@@ -1383,7 +1370,7 @@ void draw_netmap_players_hands(void)
   long i;
   long k;
   long n;
-  for (i=0; i < NET_PLAYERS_COUNT; i++)
+  for (i = 0; i < get_multiplayer_player_count(); i++)
   {
       nspck = &net_screen_packet[i];
       plyr_nam = network_player_name(i);
@@ -1739,7 +1726,7 @@ TbBool frontnetmap_update_players(struct NetMapPlayersState * nmps)
 {
     memset(scratch, 0, PALETTE_SIZE);
     long tmp2 = -1;
-    for (long i = 0; i < NET_PLAYERS_COUNT; i++)
+    for (long i = 0; i < get_multiplayer_player_count(); i++)
     {
         struct ScreenPacket* nspck = &net_screen_packet[i];
         if ((nspck->networkstatus_flags & 0x01) == 0)

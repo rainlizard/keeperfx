@@ -24,6 +24,7 @@
 #include "bflib_basics.h"
 #include "bflib_coroutine.h"
 #include "bflib_network.h"
+#include "bflib_network_internal.h"
 #include "bflib_network_exchange.h"
 #include "net_resync.h"
 
@@ -53,16 +54,24 @@ struct ConfigInfo net_config_info;
 char net_service[16][NET_SERVICE_LEN];
 char net_player_name[20];
 /******************************************************************************/
+long get_multiplayer_player_count(void)
+{
+    if (netstate.max_players > 0) {
+        return netstate.max_players;
+    }
+    return NET_PLAYERS_COUNT;
+}
+
 short setup_network_service(enum FrontendNetService service)
 {
   struct ServiceInitData *init_data = NULL;
-  SYNCMSG("Initializing 4-players type %d network", service);
+  SYNCMSG("Initializing %ld-players type %d network", get_multiplayer_player_count(), service);
   memset(&net_player_info[0], 0, sizeof(struct TbNetworkPlayerInfo));
   if (service != FrontendNetSvc_Online && service != FrontendNetSvc_LAN) {
     process_network_error(-800);
     return 0;
   }
-  if ( LbNetwork_Init(NS_ENET_UDP, NET_PLAYERS_COUNT, &net_player_info[0], init_data) )
+  if ( LbNetwork_Init(NS_ENET_UDP, get_multiplayer_player_count(), &net_player_info[0], init_data) )
   {
     process_network_error(-800);
     return 0;
@@ -91,12 +100,12 @@ static CoroutineLoopState setup_exchange_player_number(CoroutineLoop *context)
   if (LbNetwork_Exchange(NETMSG_SMALLDATA, pckt, game.packets, sizeof(struct Packet)))
       ERRORLOG("Network Exchange failed");
   int k = 0;
-  for (int i = 0; i < NET_PLAYERS_COUNT; i++)
+  for (long i = 0; i < get_multiplayer_player_count(); i++)
   {
       pckt = get_packet_direct(i);
       if (is_packet_empty(pckt))
       {
-          MULTIPLAYER_LOG("setup_network_multiplayer_game: packet[%d] is EMPTY, skipping", i);
+          MULTIPLAYER_LOG("setup_network_multiplayer_game: packet[%ld] is EMPTY, skipping", i);
           continue;
       }
       if ((net_player_info[i].active) && (pckt->action == PckA_InitPlayerNum))
@@ -128,7 +137,7 @@ static short setup_select_player_number(void)
     short is_set = 0;
     int k = 0;
     SYNCDBG(6, "Starting");
-    for (int i = 0; i < NET_PLAYERS_COUNT; i++)
+    for (long i = 0; i < get_multiplayer_player_count(); i++)
     {
         struct PlayerInfo* player = get_player(i);
         if (net_player_info[i].active)
@@ -153,7 +162,7 @@ void setup_count_players(void)
   } else
   {
     game.active_players_count = 0;
-    for (int i = 0; i < NET_PLAYERS_COUNT; i++)
+    for (long i = 0; i < get_multiplayer_player_count(); i++)
     {
       if (net_player_info[i].active)
         game.active_players_count++;
@@ -177,14 +186,14 @@ void init_players_network_game(CoroutineLoop *context)
  */
 TbBool network_player_active(int plyr_idx)
 {
-    if ((plyr_idx < 0) || (plyr_idx >= NET_PLAYERS_COUNT))
+    if ((plyr_idx < 0) || (plyr_idx >= get_multiplayer_player_count()))
         return false;
     return (net_player_info[plyr_idx].active != 0);
 }
 
 const char *network_player_name(int plyr_idx)
 {
-    if ((plyr_idx < 0) || (plyr_idx >= NET_PLAYERS_COUNT))
+    if ((plyr_idx < 0) || (plyr_idx >= get_multiplayer_player_count()))
         return NULL;
     return net_player[plyr_idx].name;
 }

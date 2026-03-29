@@ -397,8 +397,6 @@ long net_service_scroll_offset;
 long net_number_of_services;
 long net_comport_index_active;
 long net_speed_index_active;
-long net_number_of_players;
-long net_number_of_enum_players;
 long net_map_slap_frame;
 long net_level_hilighted;
 struct NetMessage net_message[NET_MESSAGES_COUNT];
@@ -637,7 +635,7 @@ TbBool validate_versions(void)
     long i;
     long ver;
     ver = -1;
-    for (i=0; i < NET_PLAYERS_COUNT; i++)
+    for (i = 0; i < get_multiplayer_player_count(); i++)
     {
       player = get_player(i);
       if ((net_screen_packet[i].networkstatus_flags & 0x01) != 0)
@@ -669,7 +667,7 @@ void versions_different_error(void)
     lbKeyOn[KC_RETURN] = 0;
     text[0] = '\0';
     // Preparing message
-    for (i=0; i < NET_PLAYERS_COUNT; i++)
+    for (i = 0; i < get_multiplayer_player_count(); i++)
     {
       plyr_nam = network_player_name(i);
       nspckt = &net_screen_packet[i];

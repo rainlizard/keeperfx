@@ -2231,10 +2231,19 @@ static unsigned char count_current_players_count()
     return current_players_count;
 }
 
+static TbBool has_second_info_page(void)
+{
+    return (count_current_players_count() > 4);
+}
+
+static TbBool has_third_info_page(void)
+{
+    return (count_current_players_count() > 7);
+}
+
 void maintain_player_page2(struct GuiButton *gbtn)
 {
-    unsigned char current_players_count = count_current_players_count();
-    if(current_players_count > 4)
+    if (has_second_info_page())
     {
         set_flag(gbtn->flags, (LbBtnF_Visible | LbBtnF_Enabled));
     }
@@ -2246,8 +2255,7 @@ void maintain_player_page2(struct GuiButton *gbtn)
 
 void maintain_query_button(struct GuiButton *gbtn)
 {
-    unsigned char current_players_count = count_current_players_count();
-    if(current_players_count > 4)
+    if (has_second_info_page())
     {
         gbtn->pos_x = scale_ui_value(74);
         gbtn->scr_pos_x = scale_ui_value(74);
@@ -2509,22 +2517,17 @@ void gui_set_query(struct GuiButton *gbtn)
 
 void gui_switch_players_visible(struct GuiButton *gbtn)
 {
-    if(info_page == 0)
+    if (info_page == 0)
     {
         info_page = 1;
         return;
     }
-    else if (info_page == 1)
+    if (info_page == 1 && has_third_info_page())
     {
-        unsigned char current_players_count = count_current_players_count();
-        if(current_players_count > 7)
-        {
-            info_page = 2;
-            return;
-        }
+        info_page = 2;
+        return;
     }
     info_page = 0;
-    return;
 }
 
 void draw_gold_total(PlayerNumber plyr_idx, int32_t scr_x, int32_t scr_y, int32_t units_per_px, long long value)
