@@ -22,6 +22,7 @@
 #include "net_holepunch.h"
 #include "net_matchmaking.h"
 #include "game_legacy.h"
+#include "net_game.h"
 #include "player_data.h"
 
 #ifdef _WIN32
@@ -34,7 +35,8 @@
 #include "post_inc.h"
 
 #define NUM_CHANNELS 2
-#define MAX_PEERS 2
+#define MAX_HOST_REMOTE_PEERS (NET_PLAYERS_COUNT - 1)
+#define MAX_JOIN_REMOTE_PEERS 1
 #define PEER_TIMEOUT_MIN_MS 2000
 #define PEER_TIMEOUT_MAX_MS 5000
 #define HOLEPUNCH_CONNECT_DELAY_MS 1000
@@ -61,7 +63,7 @@ namespace
         ENetAddress bind_address;
         enet_address_build_any(&bind_address, ENET_ADDRESS_TYPE_IPV6);
         bind_address.port = port;
-        return enet_host_create(ENET_ADDRESS_TYPE_IPV6, &bind_address, MAX_PEERS, NUM_CHANNELS, 0, 0);
+        return enet_host_create(ENET_ADDRESS_TYPE_IPV6, &bind_address, MAX_JOIN_REMOTE_PEERS, NUM_CHANNELS, 0, 0);
     }
 
     TbError bf_enet_init(NetDropCallback drop_callback)
@@ -131,7 +133,7 @@ namespace
         ENetAddress address;
         enet_address_build_any(&address, ENET_ADDRESS_TYPE_IPV6);
         address.port = actual_port;
-        host = enet_host_create(ENET_ADDRESS_TYPE_ANY, &address, MAX_PEERS, NUM_CHANNELS, 0, 0);
+        host = enet_host_create(ENET_ADDRESS_TYPE_ANY, &address, MAX_HOST_REMOTE_PEERS, NUM_CHANNELS, 0, 0);
         if (host) {
             host_is_dual_stack = 1;
             address = host->address;
@@ -140,7 +142,7 @@ namespace
             LbNetLog("ENet: dual-stack host creation failed, falling back to IPv4-only\n");
             enet_address_build_any(&address, ENET_ADDRESS_TYPE_IPV4);
             address.port = actual_port;
-            host = enet_host_create(ENET_ADDRESS_TYPE_IPV4, &address, MAX_PEERS, NUM_CHANNELS, 0, 0);
+            host = enet_host_create(ENET_ADDRESS_TYPE_IPV4, &address, MAX_HOST_REMOTE_PEERS, NUM_CHANNELS, 0, 0);
             if (!host)
                 return Lb_FAIL;
             host_is_dual_stack = 0;
@@ -219,8 +221,7 @@ namespace
 
     TbError create_join_host(ENetAddressType address_type)
     {
-        host_destroy();
-        host = enet_host_create(address_type, NULL, MAX_PEERS, NUM_CHANNELS, 0, 0);
+        host = enet_host_create(address_type, NULL, MAX_JOIN_REMOTE_PEERS, NUM_CHANNELS, 0, 0);
         if (!host) {
             LbNetLog("Join: failed to create ENet host\n");
             return Lb_FAIL;
@@ -379,10 +380,6 @@ namespace
                 LbNetLog("Join: connected successfully via %s\n", join_type);
                 enet_peer_timeout(client_peer, 0, PEER_TIMEOUT_MIN_MS, PEER_TIMEOUT_MAX_MS);
                 return Lb_OK;
-            }
-            if (service_result > 0 && (enet_event.type == ENET_EVENT_TYPE_DISCONNECT || enet_event.type == ENET_EVENT_TYPE_DISCONNECT_TIMEOUT)) {
-                LbNetLog("Join: connection rejected by host\n");
-                break;
             }
             if (service_result > 0) {
                 LbNetLog("Join: unexpected event type=%d\n", (int)enet_event.type);
