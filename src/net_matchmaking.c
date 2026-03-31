@@ -45,7 +45,6 @@
 
 static CURL *curl_handle = NULL;
 static char hosted_lobby_id[MATCHMAKING_ID_MAX] = {0};
-char join_lobby_id[MATCHMAKING_ID_MAX] = {0};
 static SDL_mutex *mutex = NULL;
 static SDL_atomic_t connect_thread_active = {0};
 static SDL_atomic_t ips_resolved = {0};
@@ -279,6 +278,20 @@ static int get_public_ip(int ipv6, char *output, int output_buffer_size, int res
     return copy_public_ip(ipv6, output, output_buffer_size);
 }
 
+static void set_session_join_address(struct TbNetworkSessionNameEntry *session, const char *ipv4, const char *ipv6, int ipv4_port, int ipv6_port)
+{
+    if (!session)
+        return;
+    session->join_address[0] = '\0';
+    if (ipv4[0] != '\0' && ipv4_port > 0) {
+        snprintf(session->join_address, sizeof(session->join_address), "%s:%d", ipv4, ipv4_port);
+        return;
+    }
+    if (ipv6[0] != '\0' && ipv6_port > 0) {
+        snprintf(session->join_address, sizeof(session->join_address), "[%s]:%d", ipv6, ipv6_port);
+    }
+}
+
 static void load_published_public_ips(int udp_ipv4_port, int udp_ipv6_port, PunchAddresses *published_addresses)
 {
     *published_addresses = (PunchAddresses){0};
@@ -381,10 +394,25 @@ void matchmaking_refresh_sessions(void)
         while (count < MATCHMAKING_SESSIONS_MAX) {
             char id[MATCHMAKING_ID_MAX];
             char name[MATCHMAKING_NAME_MAX];
+            char public_ipv4[MATCHMAKING_IP_MAX] = {0};
+            char public_ipv6[MATCHMAKING_IP_MAX] = {0};
+            int public_ipv4_port = 0;
+            int public_ipv6_port = 0;
             json_cursor = json_parse_string(json_cursor, "id", id, sizeof(id));
-            if (!json_cursor) break;
+            if (!json_cursor)
+                break;
             json_cursor = json_parse_string(json_cursor, "name", name, sizeof(name));
-            if (!json_cursor) break;
+            if (!json_cursor)
+                break;
+            json_cursor = json_parse_string(json_cursor, "ipv4", public_ipv4, sizeof(public_ipv4));
+            if (!json_cursor)
+                break;
+            json_cursor = json_parse_string(json_cursor, "ipv6", public_ipv6, sizeof(public_ipv6));
+            if (!json_cursor)
+                break;
+            json_parse_int(json_cursor, "ipv4Port", &public_ipv4_port);
+            if (!json_parse_int(json_cursor, "ipv6Port", &public_ipv6_port))
+                public_ipv6_port = public_ipv4_port;
             if (hosted_lobby_id[0] != '\0' && strcmp(id, hosted_lobby_id) == 0)
                 continue;
             struct TbNetworkSessionNameEntry *session = &matchmaking_sessions[count++];
@@ -393,8 +421,8 @@ void matchmaking_refresh_sessions(void)
             session->in_use = 1;
             session->id = (unsigned long)count;
             snprintf(session->text, SESSION_NAME_MAX_LEN, "%s", name);
-            snprintf(session->join_address, SESSION_LOBBY_ID_MAX_LEN, "%s", id);
             snprintf(session->lobby_id, SESSION_LOBBY_ID_MAX_LEN, "%s", id);
+            set_session_join_address(session, public_ipv4, public_ipv6, public_ipv4_port, public_ipv6_port);
         }
         matchmaking_session_count = count;
         LbNetLog("Matchmaking: parsed %d session(s)\n", count);

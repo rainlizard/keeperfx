@@ -178,7 +178,14 @@ TbError LbNetwork_Join(struct TbNetworkSessionNameEntry *nsname, char *plyr_name
         ERRORLOG("No network SP selected");
         return Lb_FAIL;
     }
-    if (netstate.sp->join(nsname->text, optns) == Lb_FAIL) {
+    const char *join_name = nsname->text;
+    if (nsname->join_address[0] != '\0') {
+        join_name = nsname->join_address;
+    } else if (nsname->lobby_id[0] != '\0') {
+        join_name = "";
+    }
+    void *join_options = (optns != NULL) ? optns : (void *)nsname;
+    if (netstate.sp->join(join_name, join_options) == Lb_FAIL) {
         return Lb_FAIL;
     }
     netstate.my_id = INVALID_USER_ID;

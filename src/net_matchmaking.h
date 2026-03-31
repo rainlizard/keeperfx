@@ -42,7 +42,6 @@ typedef struct {
 
 extern struct TbNetworkSessionNameEntry matchmaking_sessions[MATCHMAKING_SESSIONS_MAX];
 extern int matchmaking_session_count;
-extern char join_lobby_id[MATCHMAKING_ID_MAX];
 
 void matchmaking_connect_async(void);
 int matchmaking_connect(void);
