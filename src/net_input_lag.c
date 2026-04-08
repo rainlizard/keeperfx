@@ -125,11 +125,8 @@ void LbNetwork_UpdateInputLagIfHost(void) {
     sample_count++;
     int average_ping = total_ping / sample_count;
     int input_lag;
-    
-    
     int turn_time_ms = (1000/game_num_fps);
-    const int extra_turn_processing_time = 30;
-    int combined_time = turn_time_ms + extra_turn_processing_time;
+    int combined_time = turn_time_ms;
     input_lag = max(1, average_ping / combined_time);
     
     if (average_ping < 25) {
@@ -143,7 +140,7 @@ void LbNetwork_UpdateInputLagIfHost(void) {
     // 370ms ping : 4.63 turns : input lag 4
 
     MULTIPLAYER_LOG("Average Ping: %ums (samples: %d), Setting Input Lag: %d", average_ping, sample_count, input_lag);
-    game.input_lag_turns = input_lag;
+    game.input_lag_turns = min(input_lag, MAXIMUM_INPUT_LAG_TURNS);
 }
 /*
     if (average_ping < 160) { // 151,157,160, // Clumsy ~51

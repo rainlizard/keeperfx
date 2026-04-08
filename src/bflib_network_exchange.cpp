@@ -76,6 +76,7 @@ void SendFrameToPeers(NetUserId source_id, const void * send_buf, size_t buf_siz
     NetUserId id;
     for (id = 0; id < netstate.max_players; id += 1) {
         if (id == source_id) { continue; }
+        if (msg_type == NETMSG_GAMEPLAY && netstate.my_id != SERVER_ID && id != SERVER_ID) { continue; }
         if (!IsUserActive(id)) { continue; }
         if (msg_type == NETMSG_GAMEPLAY) {
             netstate.sp->sendmsg_single_unsequenced(id, netstate.msg_buffer, ptr - netstate.msg_buffer);
@@ -90,7 +91,8 @@ void SendFrameToPeers(NetUserId source_id, const void * send_buf, size_t buf_siz
 }
 
 TbError ProcessMessage(NetUserId source, void* server_buf, size_t frame_size) {
-    if (netstate.sp->readmsg(source, netstate.msg_buffer, sizeof(netstate.msg_buffer)) <= 0) {
+    size_t msg_size = netstate.sp->readmsg(source, netstate.msg_buffer, sizeof(netstate.msg_buffer));
+    if (msg_size <= 0) {
         ERRORLOG("Problem reading message from %u", source);
         return Lb_FAIL;
     }
@@ -187,6 +189,15 @@ TbError ProcessMessage(NetUserId source, void* server_buf, size_t frame_size) {
             struct BundledPacket* bundled = (struct BundledPacket*)ptr;
             memcpy(peer_buf, &bundled->packets[0], frame_size);
             unbundle_packets(ptr, (PlayerNumber)peer_id);
+            if (netstate.my_id == SERVER_ID && source != SERVER_ID) {
+                NetUserId id;
+                for (id = 0; id < netstate.max_players; id += 1) {
+                    if (id == netstate.my_id || id == peer_id) { continue; }
+                    if (!IsUserActive(id)) { continue; }
+                    netstate.sp->sendmsg_single_unsequenced(id, netstate.msg_buffer, msg_size);
+                    netstate.sp->sendmsg_single(id, netstate.msg_buffer, msg_size);
+                }
+            }
         } else {
             memcpy(peer_buf, ptr, frame_size);
         }
