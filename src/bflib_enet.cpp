@@ -53,10 +53,71 @@ namespace
     ENetPeer *client_peer = nullptr;
     int host_is_dual_stack = 0;
 
-    // List
-    ENetPacket *oldest_packet = nullptr;
-    ENetPacket *newest_packet = nullptr;
+    struct IncomingPacketNode {
+        IncomingPacketNode *next;
+        ENetPacket *packet;
+        NetUserId source;
+    };
+
+    IncomingPacketNode *oldest_packet = nullptr;
+    IncomingPacketNode *newest_packet = nullptr;
     int incoming_queue_size = 0;
+
+    IncomingPacketNode *find_incoming_packet(NetUserId source, IncomingPacketNode **previous)
+    {
+        IncomingPacketNode *prev = nullptr;
+        for (IncomingPacketNode *node = oldest_packet; node != nullptr; node = node->next)
+        {
+            if (source < 0 || node->source == source)
+            {
+                if (previous != nullptr) {
+                    *previous = prev;
+                }
+                return node;
+            }
+            prev = node;
+        }
+        if (previous != nullptr) {
+            *previous = nullptr;
+        }
+        return nullptr;
+    }
+
+    void enqueue_incoming_packet(ENetPacket *packet, NetUserId source)
+    {
+        IncomingPacketNode *node = new IncomingPacketNode{nullptr, packet, source};
+        if (oldest_packet == nullptr)
+        {
+            oldest_packet = node;
+            newest_packet = node;
+        }
+        else
+        {
+            newest_packet->next = node;
+            newest_packet = node;
+        }
+        incoming_queue_size += 1;
+        if (incoming_queue_size > 50)
+        {
+            fprintf(stderr, "Too many packets %d\n", incoming_queue_size);
+            WARNLOG("Too many packets %d", incoming_queue_size);
+        }
+    }
+
+    void destroy_incoming_queue()
+    {
+        for (IncomingPacketNode *node = oldest_packet; node != nullptr;)
+        {
+            IncomingPacketNode *current = node;
+            node = node->next;
+            enet_packet_destroy(current->packet);
+            delete current;
+        }
+
+        oldest_packet = nullptr;
+        newest_packet = nullptr;
+        incoming_queue_size = 0;
+    }
 
     ENetHost *create_ipv6_host(enet_uint16 port)
     {
@@ -76,19 +137,7 @@ namespace
 
     void host_destroy()
     {
-        if (oldest_packet)
-        {
-            for (ENetPacket *packet = oldest_packet; packet != nullptr;)
-            {
-                ENetPacket *current_packet = packet;
-                packet = static_cast<ENetPacket *>(packet->userData);
-                enet_packet_destroy(current_packet);
-            }
-
-            oldest_packet = nullptr;
-            newest_packet = nullptr;
-            incoming_queue_size = 0;
-        }
+        destroy_incoming_queue();
         client_peer = nullptr;
         if (host)
         {
@@ -510,26 +559,14 @@ namespace
                 g_drop_callback(user_id, NETDROP_ERROR);
                 break;
             }
-            case ENET_EVENT_TYPE_RECEIVE:
-                if (oldest_packet == nullptr)
-                {
-                    newest_packet = enet_event.packet;
-                    oldest_packet = newest_packet;
-                    incoming_queue_size = 1;
+            case ENET_EVENT_TYPE_RECEIVE: {
+                user_id = SERVER_ID;
+                if (!client_peer) {
+                    user_id = NetUserId(reinterpret_cast<ptrdiff_t>(enet_event.peer->data));
                 }
-                else
-                {
-                    newest_packet->userData = enet_event.packet;
-                    newest_packet = enet_event.packet;
-                    newest_packet->userData = nullptr;
-                    incoming_queue_size += 1;
-                    if (incoming_queue_size > 50)
-                    {
-                        fprintf(stderr, "Too many packets %d\n", incoming_queue_size);
-                        WARNLOG("Too many packets %d", incoming_queue_size);
-                    }
-                }
+                enqueue_incoming_packet(enet_event.packet, user_id);
                 return 1;
+            }
             case ENET_EVENT_TYPE_NONE:
                 break;
         }
@@ -633,19 +670,32 @@ namespace
      * @return The actual size of the message received, <= max_size. If 0, an
      *  error occurred.
      */
-    size_t bf_enet_readmsg(NetUserId, char *buffer, size_t max_size)
+    size_t bf_enet_readmsg(NetUserId source, char *buffer, size_t max_size)
     {
-        while (!oldest_packet)
+        IncomingPacketNode *previous = nullptr;
+        IncomingPacketNode *node = find_incoming_packet(source, &previous);
+        while (!node)
         {
-            bf_enet_read_event(not_expected_user, 0);
+            if (bf_enet_read_event(not_expected_user, 0) <= 0) {
+                return 0;
+            }
+            node = find_incoming_packet(source, &previous);
         }
-        ENetPacket *packet = oldest_packet;
-        oldest_packet = static_cast<ENetPacket *>(oldest_packet->userData);
-        incoming_queue_size--;
+        if (previous == nullptr) {
+            oldest_packet = node->next;
+        } else {
+            previous->next = node->next;
+        }
+        if (newest_packet == node) {
+            newest_packet = previous;
+        }
+        incoming_queue_size -= 1;
 
+        ENetPacket *packet = node->packet;
         size_t copy_size = min(packet->dataLength, max_size);
         memcpy(buffer, packet->data, copy_size);
         enet_packet_destroy(packet);
+        delete node;
         return copy_size;
     }
 
@@ -660,14 +710,40 @@ namespace
      *  for a message to arrive before returning.
      * @return The size of the message waiting if there is a message, otherwise 0.
      */
-    size_t bf_enet_msgready(NetUserId, unsigned timeout)
+    size_t bf_enet_msgready(NetUserId source, unsigned timeout)
     {
-        if (!oldest_packet)
-        {
-            bf_enet_read_event(not_expected_user, timeout);
+        IncomingPacketNode *node = find_incoming_packet(source, nullptr);
+        if (node != nullptr) {
+            return node->packet->dataLength;
         }
-        if (oldest_packet)
-            return oldest_packet->dataLength;
+
+        TbClockMSec start = LbTimerClock();
+        while (true)
+        {
+            unsigned wait_ms = 0;
+            if (timeout > 0)
+            {
+                TbClockMSec elapsed = LbTimerClock() - start;
+                if (elapsed >= timeout) {
+                    break;
+                }
+                wait_ms = (unsigned)(timeout - elapsed);
+            }
+
+            int event_result = bf_enet_read_event(not_expected_user, wait_ms);
+            if (event_result <= 0) {
+                break;
+            }
+
+            node = find_incoming_packet(source, nullptr);
+            if (node != nullptr) {
+                return node->packet->dataLength;
+            }
+
+            if (timeout == 0) {
+                break;
+            }
+        }
         return 0;
     }
 
