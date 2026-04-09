@@ -1025,11 +1025,6 @@ static void frontmap_start_music(void)
 TbBool frontnetmap_load(void)
 {
     SYNCDBG(8,"Starting");
-    if (fe_network_active)
-    {
-      if (LbNetwork_EnableNewPlayers(0))
-        ERRORLOG("Unable to prohibit new players joining exchange");
-    }
     frontend_load_data_from_cd();
     game.selected_level_number = 0;
     if (!load_map_and_window(0))
@@ -1070,7 +1065,7 @@ TbBool frontnetmap_load(void)
     if (fe_network_active)
     {
         net_number_of_players = 0;
-        for (long i = 0; i < 4; i++)
+        for (long i = 0; i < NET_PLAYERS_COUNT; i++)
         {
             struct ScreenPacket* nspck = &net_screen_packet[i];
             if ((nspck->networkstatus_flags & 0x01) != 0)
@@ -1680,7 +1675,11 @@ TbBool frontmap_exchange_screen_packet(void)
 {
     struct ScreenPacket* nspck = &net_screen_packet[my_player_number];
     memset(nspck, 0, sizeof(struct ScreenPacket));
-    nspck->networkstatus_flags |= 0x01;
+    nspck->networkstatus_flags = 0x01;
+    if (fe_network_active)
+    {
+        nspck->networkstatus_flags |= 0x18;
+    }
     nspck->param1 = fe_net_level_selected;
     if (net_map_limp_time > 0)
     {
@@ -1821,6 +1820,11 @@ TbBool frontnetmap_update(void)
     }
     if ((!nmps.tmp1) && (nmps.lvnum > 0) && (nmps.is_selected))
     {
+        if (fe_network_active && my_player_number == get_host_player_id())
+        {
+            if (LbNetwork_EnableNewPlayers(0))
+                ERRORLOG("Unable to prohibit new players joining exchange");
+        }
         set_selected_level_number(nmps.lvnum);
         snprintf(level_name, sizeof(level_name), "%s %d", get_string(GUIStr_MnuLevel), (int)nmps.lvnum);
         map_info.state_trigger = (fe_network_active < 1) ? FeSt_START_KPRLEVEL : FeSt_START_MPLEVEL;

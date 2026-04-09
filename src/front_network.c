@@ -188,7 +188,7 @@ void frontnet_service_update(void)
 
 void enum_players_callback(struct TbNetworkCallbackData *netcdat, void *a2)
 {
-    if (net_number_of_enum_players >= 4)
+    if (net_number_of_enum_players >= NET_PLAYERS_COUNT)
     {
         ERRORLOG("Too many players in enumeration");
         return;

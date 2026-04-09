@@ -16,6 +16,7 @@
 #include "bflib_enet.h"
 #include "bflib_datetm.h"
 #include "bflib_network.h"
+#include "bflib_network_internal.h"
 #include "front_network.h"
 #include "bflib_math.h"
 #include "net_portforward.h"
@@ -34,7 +35,8 @@
 #include "post_inc.h"
 
 #define NUM_CHANNELS 2
-#define MAX_PEERS 2
+#define MAX_HOST_REMOTE_PEERS MAX_N_PEERS
+#define MAX_JOIN_REMOTE_PEERS 1
 #define PEER_TIMEOUT_MIN_MS 2000
 #define PEER_TIMEOUT_MAX_MS 5000
 #define HOLEPUNCH_CONNECT_DELAY_MS 1000
@@ -104,12 +106,31 @@ namespace
         incoming_queue_size = 0;
     }
 
+    void destroy_incoming_queue(NetUserId source)
+    {
+        if (source < 0 || source >= MAX_N_USERS) {
+            return;
+        }
+        for (ENetPacket *packet = oldest_packet[source]; packet != nullptr;)
+        {
+            ENetPacket *current_packet = packet;
+            packet = static_cast<ENetPacket *>(packet->userData);
+            enet_packet_destroy(current_packet);
+            incoming_queue_size -= 1;
+        }
+        oldest_packet[source] = nullptr;
+        newest_packet[source] = nullptr;
+        if (incoming_queue_size < 0) {
+            incoming_queue_size = 0;
+        }
+    }
+
     ENetHost *create_ipv6_host(enet_uint16 port)
     {
         ENetAddress bind_address;
         enet_address_build_any(&bind_address, ENET_ADDRESS_TYPE_IPV6);
         bind_address.port = port;
-        return enet_host_create(ENET_ADDRESS_TYPE_IPV6, &bind_address, MAX_PEERS, NUM_CHANNELS, 0, 0);
+        return enet_host_create(ENET_ADDRESS_TYPE_IPV6, &bind_address, MAX_JOIN_REMOTE_PEERS, NUM_CHANNELS, 0, 0);
     }
 
     TbError bf_enet_init(NetDropCallback drop_callback)
@@ -167,7 +188,7 @@ namespace
         ENetAddress address;
         enet_address_build_any(&address, ENET_ADDRESS_TYPE_IPV6);
         address.port = actual_port;
-        host = enet_host_create(ENET_ADDRESS_TYPE_ANY, &address, MAX_PEERS, NUM_CHANNELS, 0, 0);
+        host = enet_host_create(ENET_ADDRESS_TYPE_ANY, &address, MAX_HOST_REMOTE_PEERS, NUM_CHANNELS, 0, 0);
         if (host) {
             host_is_dual_stack = 1;
             address = host->address;
@@ -176,7 +197,7 @@ namespace
             LbNetLog("ENet: dual-stack host creation failed, falling back to IPv4-only\n");
             enet_address_build_any(&address, ENET_ADDRESS_TYPE_IPV4);
             address.port = actual_port;
-            host = enet_host_create(ENET_ADDRESS_TYPE_IPV4, &address, MAX_PEERS, NUM_CHANNELS, 0, 0);
+            host = enet_host_create(ENET_ADDRESS_TYPE_IPV4, &address, MAX_HOST_REMOTE_PEERS, NUM_CHANNELS, 0, 0);
             if (!host)
                 return Lb_FAIL;
             host_is_dual_stack = 0;
@@ -270,7 +291,7 @@ namespace
     TbError create_join_host(ENetAddressType address_type)
     {
         host_destroy();
-        host = enet_host_create(address_type, NULL, MAX_PEERS, NUM_CHANNELS, 0, 0);
+        host = enet_host_create(address_type, NULL, MAX_JOIN_REMOTE_PEERS, NUM_CHANNELS, 0, 0);
         if (!host) {
             LbNetLog("Join: failed to create ENet host\n");
             return Lb_FAIL;
@@ -530,16 +551,31 @@ namespace
                     enet_peer_timeout(enet_event.peer, 0, PEER_TIMEOUT_MIN_MS, PEER_TIMEOUT_MAX_MS);
                     enet_event.peer->data = reinterpret_cast<void *>(user_id);
                 } else {
-                    LbNetLog("ENet: rejecting peer, no user slot available\n");
+                    if (netstate.locked) {
+                        LbNetLog("ENet: rejecting peer, lobby is locked\n");
+                    } else {
+                        LbNetLog("ENet: rejecting peer, no user slot available\n");
+                    }
                     enet_peer_disconnect_now(enet_event.peer, 0);
                 }
                 break;
             case ENET_EVENT_TYPE_DISCONNECT:
             case ENET_EVENT_TYPE_DISCONNECT_TIMEOUT: {
-                user_id = NetUserId(reinterpret_cast<ptrdiff_t>(enet_event.peer->data));
+                if (client_peer && client_peer == enet_event.peer) {
+                    user_id = SERVER_ID;
+                    client_peer = nullptr;
+                } else {
+                    user_id = NetUserId(reinterpret_cast<ptrdiff_t>(enet_event.peer->data));
+                }
+                if (user_id < 0 || user_id >= MAX_N_USERS) {
+                    enet_event.peer->data = reinterpret_cast<void *>(INVALID_USER_ID);
+                    break;
+                }
                 const char *disconnect_reason = "timed out";
                 if (enet_event.type == ENET_EVENT_TYPE_DISCONNECT)
                     disconnect_reason = "disconnected (clean)";
+                destroy_incoming_queue(user_id);
+                enet_event.peer->data = reinterpret_cast<void *>(INVALID_USER_ID);
                 LbNetLog("ENet: peer %d %s\n", (int)user_id, disconnect_reason);
                 g_drop_callback(user_id, NETDROP_ERROR);
                 break;
@@ -664,7 +700,11 @@ namespace
                 wait_ms = (unsigned)(timeout - elapsed);
             }
 
-            if (bf_enet_read_event(not_expected_user, wait_ms) <= 0) { return false; }
+            NetNewUserCallback new_user_callback = not_expected_user;
+            if (!client_peer) {
+                new_user_callback = OnNewUser;
+            }
+            if (bf_enet_read_event(new_user_callback, wait_ms) <= 0) { return false; }
             if (has_incoming_packet(source)) { return true; }
             if (timeout == 0) { return false; }
         }
@@ -727,10 +767,44 @@ namespace
      * Disconnects a user.
      * @param id User to be dropped.
      */
-    void bf_enet_drop_user(NetUserId)
+    void bf_enet_drop_user(NetUserId id)
     {
-        fprintf(stderr, "enet_drop_user not implemented\n");
-        ERRORLOG("enet_drop_user not implemented");
+        if (id < 0 || id >= MAX_N_USERS || !g_drop_callback) {
+            return;
+        }
+
+        TbBool disconnected = false;
+        if (client_peer && id == SERVER_ID)
+        {
+            client_peer->data = reinterpret_cast<void *>(INVALID_USER_ID);
+            enet_peer_disconnect_now(client_peer, 0);
+            client_peer = nullptr;
+            disconnected = true;
+        }
+        else if (host)
+        {
+            for (ENetPeer *currentPeer = host->peers; currentPeer < &host->peers[host->peerCount]; ++currentPeer)
+            {
+                if (currentPeer->state != ENET_PEER_STATE_CONNECTED) {
+                    continue;
+                }
+                if (NetUserId(reinterpret_cast<ptrdiff_t>(currentPeer->data)) != id) {
+                    continue;
+                }
+                currentPeer->data = reinterpret_cast<void *>(INVALID_USER_ID);
+                enet_peer_disconnect_now(currentPeer, 0);
+                disconnected = true;
+                break;
+            }
+        }
+
+        destroy_incoming_queue(id);
+        if (host) {
+            enet_host_flush(host);
+        }
+        if (disconnected) {
+            g_drop_callback(id, NETDROP_MANUAL);
+        }
     }
 
 }

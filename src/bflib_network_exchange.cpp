@@ -50,6 +50,60 @@ extern "C" {
 
 #define NETWORK_FPS 60
 
+static TbBool uses_host_relay(enum NetMessageType msg_type) {
+    return (msg_type == NETMSG_FRONTEND || msg_type == NETMSG_SMALLDATA || msg_type == NETMSG_GAMEPLAY);
+}
+
+static void relay_exchange_message_to_remote_peers(NetUserId peer_id, enum NetMessageType msg_type, size_t msg_size) {
+    if (netstate.my_id != SERVER_ID || !uses_host_relay(msg_type)) {
+        return;
+    }
+    for (NetUserId id = 0; id < netstate.max_players; id += 1) {
+        if (id == netstate.my_id || id == peer_id) { continue; }
+        if (!IsUserActive(id)) { continue; }
+        if (msg_type == NETMSG_GAMEPLAY) {
+            netstate.sp->sendmsg_single_unsequenced(id, netstate.msg_buffer, msg_size);
+        }
+        netstate.sp->sendmsg_single(id, netstate.msg_buffer, msg_size);
+    }
+}
+
+static void relay_chat_message_to_remote_peers(NetUserId source_id, size_t msg_size) {
+    if (netstate.my_id != SERVER_ID || source_id == SERVER_ID) {
+        return;
+    }
+    for (NetUserId id = 0; id < netstate.max_players; id += 1) {
+        if (id == netstate.my_id || id == source_id) { continue; }
+        if (!IsUserActive(id)) { continue; }
+        netstate.sp->sendmsg_single(id, netstate.msg_buffer, msg_size);
+    }
+}
+
+static void mark_exchange_frame_received(enum NetMessageType expected_type, TbBool *received_frames) {
+    if (!uses_host_relay(expected_type)) {
+        return;
+    }
+    if ((enum NetMessageType)netstate.msg_buffer[0] != expected_type) {
+        return;
+    }
+    NetUserId peer_id = (NetUserId)netstate.msg_buffer[1];
+    if (peer_id < 0 || peer_id >= (NetUserId)netstate.max_players) {
+        return;
+    }
+    received_frames[peer_id] = true;
+}
+
+static TbBool have_received_all_exchange_frames(const TbBool *received_frames) {
+    for (NetUserId id = 0; id < netstate.max_players; id += 1) {
+        if (id == netstate.my_id) { continue; }
+        if (netstate.users[id].progress == USER_UNUSED) { continue; }
+        if (!received_frames[id]) {
+            return false;
+        }
+    }
+    return true;
+}
+
 char* InitMessageBuffer(enum NetMessageType msg_type) {
     char* ptr = netstate.msg_buffer;
     *ptr = msg_type;
@@ -76,7 +130,7 @@ void SendFrameToPeers(NetUserId source_id, const void * send_buf, size_t buf_siz
     NetUserId id;
     for (id = 0; id < netstate.max_players; id += 1) {
         if (id == source_id) { continue; }
-        if (msg_type == NETMSG_GAMEPLAY && netstate.my_id != SERVER_ID && id != SERVER_ID) { continue; }
+        if (netstate.my_id != SERVER_ID && uses_host_relay(msg_type) && id != SERVER_ID) { continue; }
         if (!IsUserActive(id)) { continue; }
         if (msg_type == NETMSG_GAMEPLAY) {
             netstate.sp->sendmsg_single_unsequenced(id, netstate.msg_buffer, ptr - netstate.msg_buffer);
@@ -189,17 +243,11 @@ TbError ProcessMessage(NetUserId source, void* server_buf, size_t frame_size) {
             struct BundledPacket* bundled = (struct BundledPacket*)ptr;
             memcpy(peer_buf, &bundled->packets[0], frame_size);
             unbundle_packets(ptr, (PlayerNumber)peer_id);
-            if (netstate.my_id == SERVER_ID && source != SERVER_ID) {
-                NetUserId id;
-                for (id = 0; id < netstate.max_players; id += 1) {
-                    if (id == netstate.my_id || id == peer_id) { continue; }
-                    if (!IsUserActive(id)) { continue; }
-                    netstate.sp->sendmsg_single_unsequenced(id, netstate.msg_buffer, msg_size);
-                    netstate.sp->sendmsg_single(id, netstate.msg_buffer, msg_size);
-                }
-            }
         } else {
             memcpy(peer_buf, ptr, frame_size);
+        }
+        if (source != SERVER_ID) {
+            relay_exchange_message_to_remote_peers(peer_id, type, msg_size);
         }
         return Lb_OK;
     }
@@ -230,6 +278,7 @@ TbError ProcessMessage(NetUserId source, void* server_buf, size_t frame_size) {
             return Lb_OK;
         }
         process_chat_message_end(player_id, ptr);
+        relay_chat_message_to_remote_peers(source, msg_size);
         return Lb_OK;
     }
     return Lb_OK;
@@ -339,6 +388,8 @@ TbError LbNetwork_Exchange(enum NetMessageType msg_type, void *send_buf, void *s
     if (msg_type == NETMSG_GAMEPLAY) {
         timeout_max = (1000 / game_num_fps);
     }
+    TbBool received_frames[MAX_N_USERS] = {false};
+    received_frames[netstate.my_id] = true;
 
     NetUserId id;
     for (id = 0; id < netstate.max_players; id += 1) {
@@ -362,18 +413,15 @@ TbError LbNetwork_Exchange(enum NetMessageType msg_type, void *send_buf, void *s
             int wait = min(timeout_max - elapsed, remaining_time_until_draw);
 
             if (netstate.sp->msgready(id, wait)) {
-                ProcessMessage(id, server_buf, client_frame_size);
-                if (msg_type != NETMSG_GAMEPLAY) {
-                    break;
-                }
-                TbBool received_gameplay_msg = (netstate.msg_buffer[0] == NETMSG_GAMEPLAY);
                 while (netstate.sp->msgready(id, 0)) {
                     ProcessMessage(id, server_buf, client_frame_size);
-                    if (netstate.msg_buffer[0] == NETMSG_GAMEPLAY) {
-                        received_gameplay_msg = true;
-                    }
+                    mark_exchange_frame_received(msg_type, received_frames);
                 }
-                if (received_gameplay_msg) {
+                if (my_player_number == get_host_player_id()) {
+                    if (received_frames[id]) {
+                        break;
+                    }
+                } else if (have_received_all_exchange_frames(received_frames)) {
                     break;
                 }
             }
@@ -396,6 +444,12 @@ void LbNetwork_SendChatMessageImmediate(int player_id, const char *message) {
     *ptr = player_id;
     ptr += 1;
     strcpy(ptr, message);
+    if (netstate.my_id != SERVER_ID) {
+        if (IsUserActive(SERVER_ID)) {
+            netstate.sp->sendmsg_single(SERVER_ID, netstate.msg_buffer, 3 + strlen(message));
+        }
+        return;
+    }
     for (NetUserId id = 0; id < netstate.max_players; id += 1) {
         if (id != netstate.my_id && IsUserActive(id)) {
             netstate.sp->sendmsg_single(id, netstate.msg_buffer, 3 + strlen(message));
@@ -406,6 +460,12 @@ void LbNetwork_SendChatMessageImmediate(int player_id, const char *message) {
 void LbNetwork_BroadcastUnpauseTimesync(void) {
     MULTIPLAYER_LOG("LbNetwork_BroadcastUnpauseTimesync");
     InitMessageBuffer(NETMSG_UNPAUSE);
+    if (netstate.my_id != SERVER_ID) {
+        if (IsUserActive(SERVER_ID)) {
+            netstate.sp->sendmsg_single(SERVER_ID, netstate.msg_buffer, 1);
+        }
+        return;
+    }
     for (NetUserId id = 0; id < netstate.max_players; id += 1) {
         if (id != netstate.my_id && IsUserActive(id)) {
             netstate.sp->sendmsg_single(id, netstate.msg_buffer, 1);
