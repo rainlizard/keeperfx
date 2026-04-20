@@ -230,6 +230,12 @@ static int cmp_named_command(const void *a, const void *b)
     return strcasecmp(val_a->name, val_b->name);
 }
 
+static int cmp_string_case_insensitive(const void *a, const void *b)
+{
+    int cmp = strcasecmp((const char *)a, (const char *)b);
+    return (cmp != 0) ? cmp : strcmp((const char *)a, (const char *)b);
+}
+
 
 static uint32_t compute_zip_checksum(const char *path)
 {
@@ -324,31 +330,61 @@ static int load_file_sprites(const char *path, const char *file_desc)
     return add_flag;
 }
 
+static int collect_sorted_sprite_zip_names(const char *dir_path, char (**zip_names)[PATH_MAX])
+{
+    char full_path[1024] = {0};
+    sprintf(full_path, "%s/%s", dir_path, "*.zip");
+    struct TbFileEntry fe;
+    struct TbFileFind * ff = LbFileFindFirst(full_path, &fe);
+    int zip_count = 0;
+
+    *zip_names = NULL;
+    if (ff == NULL)
+        return 0;
+
+    do {
+        char (*new_names)[PATH_MAX] = realloc(*zip_names, (zip_count + 1) * sizeof((*zip_names)[0]));
+        if (new_names == NULL) {
+            ERRORLOG("Unable to allocate sprite zip list");
+            LbFileFindEnd(ff);
+            free(*zip_names);
+            *zip_names = NULL;
+            return -1;
+        }
+
+        *zip_names = new_names;
+        strcpy((*zip_names)[zip_count++], fe.Filename);
+    } while (LbFileFindNext(ff, &fe) >= 0);
+    LbFileFindEnd(ff);
+
+    qsort(*zip_names, zip_count, sizeof((*zip_names)[0]), &cmp_string_case_insensitive);
+    return zip_count;
+}
+
 static void load_dir_sprites(const char *dir_path, const char *dir_desc)
 {
     SYNCDBG(8, "Starting");
     if (dir_path == NULL || dir_path[0] == 0)
         return;
     char full_path[1024] = {0};
-    sprintf(full_path, "%s/%s", dir_path, "*.zip");
-    struct TbFileEntry fe;
-    struct TbFileFind * ff = LbFileFindFirst(full_path, &fe);
-    int cnt_zip = 0, cnt_sprite = 0, cnt_icon = 0;
-    if (ff) {
-        do {
-            sprintf(full_path, "%s/%s", dir_path, fe.Filename);
-            int add_flag = load_file_sprites(full_path, NULL);
-            if (add_flag & CLF_Sprites)
-                cnt_sprite++;
-            if (add_flag & CLF_Icons)
-                cnt_icon++;
-            cnt_zip++;
-        } while (LbFileFindNext(ff, &fe) >= 0);
-        LbFileFindEnd(ff);
+    int cnt_sprite = 0, cnt_icon = 0;
+    char (*zip_names)[PATH_MAX] = NULL;
+    int zip_count = collect_sorted_sprite_zip_names(dir_path, &zip_names);
+    if (zip_count <= 0)
+        return;
 
-        if (dir_desc != NULL)
-            LbJustLog("Found %d sprite zip file(s) from %s, loaded %d with animations and %d with icons. Used %d/%d sprite slots.\n", cnt_zip, dir_desc, cnt_sprite, cnt_icon, next_free_sprite, KEEPERSPRITE_ADD_NUM);
+    for (int i = 0; i < zip_count; i++) {
+        sprintf(full_path, "%s/%s", dir_path, zip_names[i]);
+        int add_flag = load_file_sprites(full_path, NULL);
+        if (add_flag & CLF_Sprites)
+            cnt_sprite++;
+        if (add_flag & CLF_Icons)
+            cnt_icon++;
     }
+    free(zip_names);
+
+    if (dir_desc != NULL)
+        LbJustLog("Found %d sprite zip file(s) from %s, loaded %d with animations and %d with icons. Used %d/%d sprite slots.\n", zip_count, dir_desc, cnt_sprite, cnt_icon, next_free_sprite, KEEPERSPRITE_ADD_NUM);
 }
 
 /* @comment
