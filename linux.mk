@@ -211,6 +211,7 @@ src/net_holepunch.c \
 src/net_matchmaking.c \
 src/net_lan.c \
 src/net_input_lag.c \
+src/net_predicted_tagging.c \
 src/net_received_packets.c \
 src/net_redundant_packets.c \
 src/net_resync.cpp \

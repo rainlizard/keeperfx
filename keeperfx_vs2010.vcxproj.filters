@@ -633,6 +633,9 @@
     <ClCompile Include="src\roomspace.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\net_predicted_tagging.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="src\roomspace_detection.c">
       <Filter>Source Files</Filter>
     </ClCompile>

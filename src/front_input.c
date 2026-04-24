@@ -2453,6 +2453,11 @@ void get_dungeon_control_nonaction_inputs(void)
       if (get_player_coords_and_context(&pos, &context))
       {
           set_players_packet_position(pckt, pos.x.val, pos.y.val, context);
+          player->primary_cursor_state = context;
+      }
+      else
+      {
+          player->primary_cursor_state = CSt_DefaultArrow;
     }
   } else
     if (screen_to_map(get_local_camera(get_player_active_camera(player)), my_mouse_x, my_mouse_y, &pos))

@@ -281,6 +281,7 @@ obj/map_utils.o \
 obj/moonphase.o \
 obj/net_game.o \
 obj/net_input_lag.o \
+obj/net_predicted_tagging.o \
 obj/net_received_packets.o \
 obj/net_redundant_packets.o \
 obj/net_checksums.o \

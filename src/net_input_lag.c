@@ -2,10 +2,10 @@
 #include "net_input_lag.h"
 
 #include "globals.h"
-#include "packets.h"
-#include "player_data.h"
-#include "net_game.h"
 #include "game_legacy.h"
+#include "net_game.h"
+#include "net_predicted_tagging.h"
+#include "packets.h"
 #include "bflib_network.h"
 #include "bflib_network_internal.h"
 #include "bflib_enet.h"
@@ -30,6 +30,7 @@ void store_local_packet_in_input_lag_queue(PlayerNumber my_packet_num) {
     const char* player_name;
     if (my_packet_num == 0) {player_name = "Host";} else {player_name = "Client";}
     MULTIPLAYER_LOG("store_local_packet_in_input_lag_queue: STORING local packet[%s] turn=%lu checksum=%08lx into queue slot %d", player_name, (unsigned long)game.packets[my_packet_num].turn, (unsigned long)game.packets[my_packet_num].checksum, slot);
+    rebuild_local_predicted_dig_preview();
 }
 
 struct Packet* get_local_input_lag_packet_for_turn(GameTurn target_turn) {
@@ -65,6 +66,7 @@ unsigned short calculate_skip_input(void) {
 
 void clear_input_lag_queue(void) {
     memset(local_input_lag_packets, 0, sizeof(local_input_lag_packets));
+    clear_local_predicted_dig_preview();
 }
 
 void LbNetwork_UpdateInputLagIfHost(void) {
