@@ -29,6 +29,8 @@
 #include "gui_soundmsgs.h"
 #include "config_settings.h"
 #include "slab_data.h"
+#include "net_input_lag.h"
+#include "packets.h"
 
 #include "keeperfx.hpp"
 #include "post_inc.h"
@@ -38,7 +40,363 @@ extern "C" {
 #endif
 /******************************************************************************/
 TbBool reset_roomspace = false;
+static unsigned char local_predicted_dig_overlay[MAX_TILES_X * MAX_TILES_Y];
+static GameTurn local_predicted_dig_overlay_expiry[MAX_TILES_X * MAX_TILES_Y];
 /******************************************************************************/
+static void clear_expired_local_predicted_dig_overlay(GameTurn current_turn)
+{
+    for (int32_t i = 0; i < game.map_tiles_x * game.map_tiles_y; i++)
+    {
+        if ((local_predicted_dig_overlay[i] != LocalPredictedDig_None) && (local_predicted_dig_overlay_expiry[i] < current_turn))
+        {
+            local_predicted_dig_overlay[i] = LocalPredictedDig_None;
+            local_predicted_dig_overlay_expiry[i] = 0;
+        }
+    }
+}
+
+static void set_local_predicted_dig_slab(MapSlabCoord slb_x, MapSlabCoord slb_y, unsigned char overlay_state, GameTurn expiry_turn)
+{
+    SlabCodedCoords slb_num;
+
+    if ((slb_x < 0) || (slb_x >= game.map_tiles_x))
+    {
+        return;
+    }
+    if ((slb_y < 0) || (slb_y >= game.map_tiles_y))
+    {
+        return;
+    }
+
+    if (overlay_state != LocalPredictedDig_Clear)
+    {
+        struct Map* mapblk = get_map_block_at(slab_subtile_center(slb_x), slab_subtile_center(slb_y));
+        if ((mapblk->flags & SlbAtFlg_Valuable) != 0)
+        {
+            overlay_state = LocalPredictedDig_Gold;
+        }
+        else
+        {
+            overlay_state = LocalPredictedDig_Land;
+        }
+    }
+
+    slb_num = get_slab_number(slb_x, slb_y);
+    local_predicted_dig_overlay[slb_num] = overlay_state;
+    local_predicted_dig_overlay_expiry[slb_num] = expiry_turn;
+}
+
+static void build_local_predicted_dig_overlay_for_roomspace(struct PlayerInfo* player, struct RoomSpace* roomspace, int32_t slab_delta_x, int32_t slab_delta_y, GameTurn expiry_turn)
+{
+    int32_t current_x;
+    int32_t current_y;
+    MapSubtlCoord stl_cx;
+    MapSubtlCoord stl_cy;
+    unsigned char overlay_state;
+
+    if (roomspace->untag_mode)
+    {
+        overlay_state = LocalPredictedDig_Clear;
+    }
+    else
+    {
+        overlay_state = LocalPredictedDig_Land;
+    }
+
+    if (player->roomspace_highlight_mode == 0)
+    {
+        for (int32_t y = 0; y < roomspace->height; y++)
+        {
+            current_y = roomspace->top + y + slab_delta_y;
+            for (int32_t x = 0; x < roomspace->width; x++)
+            {
+                int32_t draw_path_x;
+                int32_t draw_path_y;
+                current_x = roomspace->left + x + slab_delta_x;
+                draw_path_x = (player->previous_cursor_subtile_x / STL_PER_SLB) + slab_delta_x;
+                draw_path_y = (player->previous_cursor_subtile_y / STL_PER_SLB) + slab_delta_y;
+                while (true)
+                {
+                    stl_cx = stl_slab_center_subtile(draw_path_x * STL_PER_SLB);
+                    stl_cy = stl_slab_center_subtile(draw_path_y * STL_PER_SLB);
+                    set_local_predicted_dig_slab(subtile_slab(stl_cx), subtile_slab(stl_cy), overlay_state, expiry_turn);
+                    if ((draw_path_x == current_x) && (draw_path_y == current_y))
+                    {
+                        break;
+                    }
+                    if (abs(draw_path_x - current_x) > abs(draw_path_y - current_y))
+                    {
+                        if (draw_path_x < current_x)
+                        {
+                            draw_path_x += 1;
+                        }
+                        else
+                        {
+                            draw_path_x -= 1;
+                        }
+                    }
+                    else
+                    {
+                        if (draw_path_y < current_y)
+                        {
+                            draw_path_y += 1;
+                        }
+                        else
+                        {
+                            draw_path_y -= 1;
+                        }
+                    }
+                }
+            }
+        }
+        return;
+    }
+
+    switch (roomspace->drag_direction)
+    {
+        case top_left_to_bottom_right:
+        {
+            current_y = roomspace->top + slab_delta_y;
+            current_x = roomspace->left + slab_delta_x;
+            break;
+        }
+        case bottom_right_to_top_left:
+        {
+            current_y = roomspace->bottom + slab_delta_y;
+            current_x = roomspace->right + slab_delta_x;
+            break;
+        }
+        case top_right_to_bottom_left:
+        {
+            current_y = roomspace->top + slab_delta_y;
+            current_x = roomspace->right + slab_delta_x;
+            break;
+        }
+        case bottom_left_to_top_right:
+        {
+            current_y = roomspace->bottom + slab_delta_y;
+            current_x = roomspace->left + slab_delta_x;
+            break;
+        }
+        default:
+        {
+            return;
+        }
+    }
+
+    TbBool finished = false;
+    while (!finished)
+    {
+        stl_cx = stl_slab_center_subtile(current_x * STL_PER_SLB);
+        stl_cy = stl_slab_center_subtile(current_y * STL_PER_SLB);
+        set_local_predicted_dig_slab(subtile_slab(stl_cx), subtile_slab(stl_cy), overlay_state, expiry_turn);
+        switch (roomspace->drag_direction)
+        {
+            case top_left_to_bottom_right:
+            {
+                current_x++;
+                if (current_x > roomspace->right + slab_delta_x)
+                {
+                    current_x = roomspace->left + slab_delta_x;
+                    current_y++;
+                }
+                if (current_y > roomspace->bottom + slab_delta_y)
+                {
+                    finished = true;
+                }
+                break;
+            }
+            case bottom_right_to_top_left:
+            {
+                current_x--;
+                if (current_x < roomspace->left + slab_delta_x)
+                {
+                    current_x = roomspace->right + slab_delta_x;
+                    current_y--;
+                }
+                if (current_y < roomspace->top + slab_delta_y)
+                {
+                    finished = true;
+                }
+                break;
+            }
+            case top_right_to_bottom_left:
+            {
+                current_x--;
+                if (current_x < roomspace->left + slab_delta_x)
+                {
+                    current_x = roomspace->right + slab_delta_x;
+                    current_y++;
+                }
+                if (current_y > roomspace->bottom + slab_delta_y)
+                {
+                    finished = true;
+                }
+                break;
+            }
+            case bottom_left_to_top_right:
+            {
+                current_x++;
+                if (current_x > roomspace->right + slab_delta_x)
+                {
+                    current_x = roomspace->left + slab_delta_x;
+                    current_y--;
+                }
+                if (current_y < roomspace->top + slab_delta_y)
+                {
+                    finished = true;
+                }
+                break;
+            }
+            default:
+            {
+                return;
+            }
+        }
+    }
+}
+
+void update_local_predicted_dig_preview(PlayerNumber plyr_idx)
+{
+    struct PlayerInfo* player;
+    struct Packet* live_pckt;
+    struct Packet saved_live_packet;
+    struct RoomSpace saved_render_roomspace;
+    MapSubtlCoord saved_cursor_subtile_x;
+    MapSubtlCoord saved_cursor_subtile_y;
+    MapSubtlCoord saved_previous_cursor_subtile_x;
+    MapSubtlCoord saved_previous_cursor_subtile_y;
+    unsigned short saved_primary_cursor_state;
+    TbBool have_previous_packet;
+    MapSubtlCoord previous_packet_stl_x;
+    MapSubtlCoord previous_packet_stl_y;
+    GameTurn first_pending_turn;
+    GameTurn current_turn;
+
+    player = get_player(plyr_idx);
+    if (player_invalid(player))
+    {
+        return;
+    }
+    if (!is_my_player(player))
+    {
+        return;
+    }
+    if (player->view_type != PVT_DungeonTop)
+    {
+        return;
+    }
+    if (player->work_state != PSt_CtrlDungeon)
+    {
+        return;
+    }
+
+    live_pckt = get_packet(plyr_idx);
+    saved_live_packet = *live_pckt;
+    saved_render_roomspace = player->render_roomspace;
+    saved_cursor_subtile_x = player->cursor_subtile_x;
+    saved_cursor_subtile_y = player->cursor_subtile_y;
+    saved_previous_cursor_subtile_x = player->previous_cursor_subtile_x;
+    saved_previous_cursor_subtile_y = player->previous_cursor_subtile_y;
+    saved_primary_cursor_state = player->primary_cursor_state;
+
+    have_previous_packet = false;
+    current_turn = get_gameturn();
+    clear_expired_local_predicted_dig_overlay(current_turn);
+    if (game.input_lag_turns > 0)
+    {
+        first_pending_turn = current_turn - game.input_lag_turns;
+    }
+    else
+    {
+        first_pending_turn = current_turn;
+    }
+    if ((int32_t)first_pending_turn < 0)
+    {
+        first_pending_turn = 0;
+    }
+
+    for (GameTurn turn = first_pending_turn; turn <= current_turn; turn++)
+    {
+        struct Packet* queued_pckt = get_local_input_lag_packet_for_turn(turn);
+        MapSubtlCoord stl_x;
+        MapSubtlCoord stl_y;
+
+        if (queued_pckt == NULL)
+        {
+            continue;
+        }
+        if ((queued_pckt->control_flags & PCtr_MapCoordsValid) == 0)
+        {
+            continue;
+        }
+        if ((queued_pckt->control_flags & (PCtr_LBtnClick | PCtr_LBtnHeld)) == 0)
+        {
+            continue;
+        }
+
+        *live_pckt = *queued_pckt;
+        player->primary_cursor_state = (unsigned short)(queued_pckt->additional_packet_values & PCAdV_ContextMask) >> 1;
+        if ((player->primary_cursor_state != CSt_PickAxe) && (player->primary_cursor_state != CSt_PowerHand))
+        {
+            continue;
+        }
+
+        stl_x = coord_subtile(queued_pckt->pos_x);
+        stl_y = coord_subtile(queued_pckt->pos_y);
+        player->cursor_subtile_x = stl_x;
+        player->cursor_subtile_y = stl_y;
+        if (have_previous_packet)
+        {
+            player->previous_cursor_subtile_x = previous_packet_stl_x;
+            player->previous_cursor_subtile_y = previous_packet_stl_y;
+        }
+        else
+        {
+            player->previous_cursor_subtile_x = stl_x;
+            player->previous_cursor_subtile_y = stl_y;
+        }
+
+        get_dungeon_highlight_user_roomspace(&player->render_roomspace, plyr_idx, stl_x, stl_y);
+        if (player->render_roomspace.slab_count > 0)
+        {
+            GameTurn expiry_turn = turn + game.input_lag_turns + 1;
+            player->render_roomspace.tag_for_dig = true;
+            build_local_predicted_dig_overlay_for_roomspace(player, &player->render_roomspace, 0, 0, expiry_turn);
+        }
+
+        previous_packet_stl_x = stl_x;
+        previous_packet_stl_y = stl_y;
+        have_previous_packet = true;
+    }
+
+    player->render_roomspace = saved_render_roomspace;
+    player->cursor_subtile_x = saved_cursor_subtile_x;
+    player->cursor_subtile_y = saved_cursor_subtile_y;
+    player->previous_cursor_subtile_x = saved_previous_cursor_subtile_x;
+    player->previous_cursor_subtile_y = saved_previous_cursor_subtile_y;
+    player->primary_cursor_state = saved_primary_cursor_state;
+    *live_pckt = saved_live_packet;
+}
+
+unsigned char get_local_predicted_dig_state(MapSubtlCoord stl_x, MapSubtlCoord stl_y)
+{
+    MapSlabCoord slb_x;
+    MapSlabCoord slb_y;
+
+    slb_x = subtile_slab(stl_x);
+    slb_y = subtile_slab(stl_y);
+    if ((slb_x < 0) || (slb_x >= game.map_tiles_x))
+    {
+        return LocalPredictedDig_None;
+    }
+    if ((slb_y < 0) || (slb_y >= game.map_tiles_y))
+    {
+        return LocalPredictedDig_None;
+    }
+    return local_predicted_dig_overlay[get_slab_number(slb_x, slb_y)];
+}
+
 TbBool can_afford_roomspace(PlayerNumber plyr_idx, RoomKind rkind, int slab_count)
 {
     struct PlayerInfo* player = get_player(plyr_idx);

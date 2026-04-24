@@ -61,6 +61,13 @@ enum roomspace_directions {
     bottom_left_to_top_right = 3,
 };
 
+enum LocalPredictedDigState {
+    LocalPredictedDig_None = 0,
+    LocalPredictedDig_Land = 1,
+    LocalPredictedDig_Gold = 2,
+    LocalPredictedDig_Clear = 3,
+};
+
 // RoomSpace describes a space or "roomspace" - i.e. a collection of slabs that are a valid
 // location from the currently selected room type (when placing rooms).
 // The 2D array of booleans, slab_grid[][] describes each of the slabs within
@@ -140,6 +147,7 @@ void update_roomspaces();
 void process_build_roomspace_inputs(PlayerNumber plyr_idx);
 void process_sell_roomspace_inputs(PlayerNumber plyr_idx);
 void process_highlight_roomspace_inputs(PlayerNumber plyr_idx);
+void update_local_predicted_dig_preview(PlayerNumber plyr_idx);
 
 void reset_dungeon_build_room_ui_variables(PlayerNumber plyr_idx);
 
@@ -150,6 +158,7 @@ void detect_roomspace_direction(struct RoomSpace *roomspace);
 void detect_bridge_shape(PlayerNumber plyr_idx);
 TbBool roomspace_liquid_path_is_blocked(PlayerNumber plyr_idx, MapSlabCoord start, MapSlabCoord end, MapSlabCoord other_axis, TbBool vertical);
 TbBool roomspace_slab_blocks_bridge(PlayerNumber plyr_idx, MapSlabCoord slb_x, MapSlabCoord slb_y);
+unsigned char get_local_predicted_dig_state(MapSubtlCoord stl_x, MapSubtlCoord stl_y);
 
 /******************************************************************************/
 #include "roomspace_detection.h"

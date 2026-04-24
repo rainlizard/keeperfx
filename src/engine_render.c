@@ -99,6 +99,7 @@ enum QKinds {
 struct MinMax;
 struct Camera;
 struct PlayerInfo;
+static unsigned char get_dig_texture_overlay_state(MapSubtlCoord stl_x, MapSubtlCoord stl_y, const struct Map* mapblk);
 
 typedef unsigned char QKind;
 
@@ -4573,14 +4574,16 @@ static void do_a_plane_of_engine_columns_cluedo(long stl_x, long stl_y, long pla
         if ((ncor > 0) && (ncor <= COLUMN_STACK_HEIGHT))
         {
             int ncor_raw;
+            unsigned char dig_overlay_state;
             ncor_raw = floor_height_table[solidmsk_cur_raw];
-            if ( (cur_mapblk->flags & SlbAtFlg_Unexplored) != 0 )
+            dig_overlay_state = get_dig_texture_overlay_state(stl_x + xaval + xidx, stl_y, cur_mapblk);
+            if (dig_overlay_state == LocalPredictedDig_Land)
             {
                 unsigned short textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, TEXTURE_LAND_MARKED_LAND);
                 do_a_gpoly_unlit_tr(&bec[0].cors[ncor], &bec[1].cors[ncor], &fec[1].cors[ncor], textr_id);
                 do_a_gpoly_unlit_bl(&fec[1].cors[ncor], &fec[0].cors[ncor], &bec[0].cors[ncor], textr_id);
             } else
-            if ((cur_mapblk->flags & SlbAtFlg_TaggedValuable) != 0)
+            if (dig_overlay_state == LocalPredictedDig_Gold)
             {
                 unsigned short textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, TEXTURE_LAND_MARKED_GOLD);
                 do_a_gpoly_unlit_tr(&bec[0].cors[ncor], &bec[1].cors[ncor], &fec[1].cors[ncor], textr_id);
@@ -4598,7 +4601,8 @@ static void do_a_plane_of_engine_columns_cluedo(long stl_x, long stl_y, long pla
             }
         } else
         {
-            if ((cur_mapblk->flags & SlbAtFlg_Unexplored) == 0)
+            unsigned char dig_overlay_state = get_dig_texture_overlay_state(stl_x + xaval + xidx, stl_y, cur_mapblk);
+            if ((dig_overlay_state == LocalPredictedDig_None) || (dig_overlay_state == LocalPredictedDig_Clear))
             {
                 unsigned short textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, cur_colmn->floor_texture);
                 do_a_gpoly_gourad_tr(&bec[0].cors[0], &bec[1].cors[0], &fec[1].cors[0], textr_id, -1);
@@ -4761,13 +4765,14 @@ static void do_a_plane_of_engine_columns_isometric(long stl_x, long stl_y, long 
         ncor = floor_height_table[solidmsk_cur];
         if (ncor > 0)
         {
-            if (cur_mapblk->flags & SlbAtFlg_Unexplored)
+            unsigned char dig_overlay_state = get_dig_texture_overlay_state(stl_x + xaval + xidx, stl_y, cur_mapblk);
+            if (dig_overlay_state == LocalPredictedDig_Land)
             {
                 unsigned short textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, TEXTURE_LAND_MARKED_LAND);
                 do_a_gpoly_unlit_tr(&bec[0].cors[ncor], &bec[1].cors[ncor], &fec[1].cors[ncor], textr_id);
                 do_a_gpoly_unlit_bl(&fec[1].cors[ncor], &fec[0].cors[ncor], &bec[0].cors[ncor], textr_id);
             }
-            else if ((cur_mapblk->flags & (SlbAtFlg_TaggedValuable|SlbAtFlg_Unexplored)) == 0)
+            else if ((dig_overlay_state == LocalPredictedDig_None) || (dig_overlay_state == LocalPredictedDig_Clear))
             {
                 struct CubeConfigStats * cubed;
                 cubed = get_cube_model_stats(*(short *)((char *)&cur_colmn->floor_texture + 2 * ncor + 1));
@@ -4776,7 +4781,7 @@ static void do_a_plane_of_engine_columns_isometric(long stl_x, long stl_y, long 
                 do_a_gpoly_gourad_tr(&bec[0].cors[ncor], &bec[1].cors[ncor], &fec[1].cors[ncor], textr_id, -1);
                 do_a_gpoly_gourad_bl(&fec[1].cors[ncor], &fec[0].cors[ncor], &bec[0].cors[ncor], textr_id, -1);
             } else
-            if ((cur_mapblk->flags & SlbAtFlg_Valuable) != 0)
+            if (dig_overlay_state == LocalPredictedDig_Gold)
             {
                 unsigned short textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, TEXTURE_LAND_MARKED_GOLD);
                 do_a_gpoly_unlit_tr(&bec[0].cors[ncor], &bec[1].cors[ncor], &fec[1].cors[ncor], textr_id);
@@ -4784,7 +4789,8 @@ static void do_a_plane_of_engine_columns_isometric(long stl_x, long stl_y, long 
             }
         } else
         {
-            if ((cur_mapblk->flags & SlbAtFlg_Unexplored) == 0)
+            unsigned char dig_overlay_state = get_dig_texture_overlay_state(stl_x + xaval + xidx, stl_y, cur_mapblk);
+            if ((dig_overlay_state == LocalPredictedDig_None) || (dig_overlay_state == LocalPredictedDig_Clear))
             {
                 unsigned short textr_id = engine_remap_texture_blocks(stl_x + xaval + xidx, stl_y, cur_colmn->floor_texture);
                 do_a_gpoly_gourad_tr(&bec[0].cors[0], &bec[1].cors[0], &fec[1].cors[0], textr_id, -1);
@@ -6979,6 +6985,25 @@ static void draw_texturedquad_block(struct BucketKindTexturedQuad *txquad)
     point_c.S = txquad->shade_intensity3;
     draw_gpoly(&point_a, &point_d, &point_b);
     draw_gpoly(&point_a, &point_b, &point_c);
+}
+
+static unsigned char get_dig_texture_overlay_state(MapSubtlCoord stl_x, MapSubtlCoord stl_y, const struct Map* mapblk)
+{
+    unsigned char predicted_state = get_local_predicted_dig_state(stl_x, stl_y);
+
+    if (predicted_state != LocalPredictedDig_None)
+    {
+        return predicted_state;
+    }
+    if ((mapblk->flags & SlbAtFlg_Unexplored) != 0)
+    {
+        return LocalPredictedDig_Land;
+    }
+    if ((mapblk->flags & SlbAtFlg_TaggedValuable) != 0)
+    {
+        return LocalPredictedDig_Gold;
+    }
+    return LocalPredictedDig_None;
 }
 
 static void display_fast_drawlist(struct Camera *cam) // Draws frontview only. Not isometric or 1st person view.
