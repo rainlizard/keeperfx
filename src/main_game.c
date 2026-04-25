@@ -40,6 +40,7 @@
 #include "lua_base.h"
 #include "lua_triggers.h"
 #include "net_game.h"
+#include "frontmenu_ingame_evnt.h"
 #include "net_resync.h"
 #include "room_library.h"
 #include "room_list.h"
@@ -349,6 +350,7 @@ void startup_network_game(CoroutineLoop *context, TbBool local)
     } else
     {
         game.game_kind = GKind_MultiGame;
+        debug_display_network_stats = 1;
         init_players_network_game(context);
     }
     setup_count_players(); // It is reset by init_level

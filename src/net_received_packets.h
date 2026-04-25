@@ -38,6 +38,7 @@ void clear_packet_tracking(void);
 void store_received_packets(void);
 void store_received_packet(GameTurn turn, PlayerNumber player, const struct Packet* packet);
 const struct Packet* get_received_packets_for_turn(GameTurn turn);
+TbBool have_received_all_packets_for_turn(GameTurn turn, PlayerNumber local_packet_num);
 const struct Packet* get_received_packet_for_player(GameTurn turn, PlayerNumber player);
 
 /******************************************************************************/

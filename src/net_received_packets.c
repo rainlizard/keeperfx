@@ -22,6 +22,7 @@
 #include "globals.h"
 #include "bflib_basics.h"
 #include "bflib_network.h"
+#include "net_game.h"
 #include "packets.h"
 #include "player_data.h"
 #include "game_legacy.h"
@@ -99,7 +100,8 @@ void store_received_packets(void) {
     }
 }
 
-const struct Packet* get_received_packets_for_turn(GameTurn turn) {
+const struct Packet* get_received_packets_for_turn(GameTurn turn)
+{
     static struct Packet packets_for_turn[PACKETS_COUNT];
     TbBool found = false;
     memset(packets_for_turn, 0, sizeof(packets_for_turn));
@@ -116,6 +118,15 @@ const struct Packet* get_received_packets_for_turn(GameTurn turn) {
         return NULL;
     }
     return packets_for_turn;
+}
+
+TbBool have_received_all_packets_for_turn(GameTurn turn, PlayerNumber local_packet_num) {
+    for (PlayerNumber player = 0; player < NET_PLAYERS_COUNT; ++player) {
+        if (player != local_packet_num && network_player_active(player) && get_received_packet_for_player(turn, player) == NULL) {
+            return false;
+        }
+    }
+    return true;
 }
 
 const struct Packet* get_received_packet_for_player(GameTurn turn, PlayerNumber player) {

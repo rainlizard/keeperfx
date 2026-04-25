@@ -9,6 +9,7 @@
 #include "bflib_network.h"
 #include "bflib_network_internal.h"
 #include "bflib_enet.h"
+#include "bflib_math.h"
 #include "bflib_datetm.h"
 #include "frontend.h"
 #include "front_landview.h"
@@ -20,6 +21,11 @@ extern "C" {
 #endif
 
 static struct Packet local_input_lag_packets[MAXIMUM_INPUT_LAG_TURNS + 1];
+
+enum InputLagMode {
+    INPUT_LAG_MODE_ONE_VS_ONE = 0,
+    INPUT_LAG_MODE_RELAY,
+};
 
 void store_local_packet_in_input_lag_queue(PlayerNumber my_packet_num) {
     if (game.input_lag_turns + 1 <= 0) {
@@ -69,35 +75,45 @@ void clear_input_lag_queue(void) {
 
 void LbNetwork_UpdateInputLagIfHost(void) {
     static TbClockMSec last_update_ms = 0;
-    static TbClockMSec second_player_login_time = 0;
+    static TbClockMSec player_count_change_time = 0;
     static int total_ping = 0;
     static int sample_count = 0;
+    static int previous_remote_player_count = -1;
     if ((game.system_flags & GSF_NetworkActive) == 0) { return; }
     if (frontend_menu_state == FeSt_START_MPLEVEL) { return; }
     if (my_player_number != get_host_player_id()) { return; }
     if (!netstate.sp) { return; }
     TbClockMSec now = LbTimerClock();
     netstate.sp->update(OnNewUser);
-    int active_player_count = 0;
+    int remote_player_count = 0;
     NetUserId id;
     for (id = 0; id < netstate.max_players; id += 1) {
         if (id == netstate.my_id) { continue; }
         if (netstate.users[id].progress == USER_LOGGEDIN) {
-            active_player_count += 1;
+            remote_player_count += 1;
         }
     }
-    if (active_player_count == 0) {
-        second_player_login_time = 0;
+    if (remote_player_count == 0) {
+        player_count_change_time = 0;
         sample_count = 0;
         total_ping = 0;
+        previous_remote_player_count = 0;
         return;
     }
-    if (second_player_login_time == 0) {
-        second_player_login_time = now;
+    enum InputLagMode mode = INPUT_LAG_MODE_RELAY;
+    if (remote_player_count == 1) {
+        mode = INPUT_LAG_MODE_ONE_VS_ONE;
+    }
+    if (previous_remote_player_count != remote_player_count) {
+        player_count_change_time = now;
         sample_count = 0;
         total_ping = 0;
+        previous_remote_player_count = remote_player_count;
     }
-    if (now - second_player_login_time < WAIT_FOR_STABLE_PLAYER) {
+    if (player_count_change_time == 0) {
+        player_count_change_time = now;
+    }
+    if (now - player_count_change_time < WAIT_FOR_STABLE_PLAYER) {
         sample_count = 0;
         total_ping = 0;
         return;
@@ -123,41 +139,20 @@ void LbNetwork_UpdateInputLagIfHost(void) {
     }
     total_ping += max_ping;
     sample_count++;
-    int average_ping = total_ping / sample_count;
-    int input_lag;
-    
-    
-    int turn_time_ms = (1000/game_num_fps);
-    const int extra_turn_processing_time = 30;
-    int combined_time = turn_time_ms + extra_turn_processing_time;
-    input_lag = max(1, average_ping / combined_time);
-    
-    if (average_ping < 25) {
-        input_lag = 0;
+    float average_ping = total_ping / sample_count;
+    float turn_time = 1000.0f / game_num_fps;
+    float free_space = 0; //(turn_time*0.5); //There is no free space, if you increase this then on the edges you'll get 5% slowdown and more.
+    float adjusted_ping = 0;
+    switch (mode) {
+        case INPUT_LAG_MODE_ONE_VS_ONE: adjusted_ping = (average_ping - free_space) * 0.5f; break;
+        case INPUT_LAG_MODE_RELAY:      adjusted_ping = (average_ping - free_space); break;
     }
-
-    //  55ms ping : 0.69 turns : input lag 1
-    // 135ms ping : 1.69 turns : input lag 1
-    // 205ms ping : 2.56 turns : input lag 2
-    // 260ms ping : 3.25 turns : input lag 3
-    // 370ms ping : 4.63 turns : input lag 4
-
-    MULTIPLAYER_LOG("Average Ping: %ums (samples: %d), Setting Input Lag: %d", average_ping, sample_count, input_lag);
-    game.input_lag_turns = input_lag;
+    int input_lag = CEILING(adjusted_ping / turn_time);
+    if (average_ping < 25) {input_lag = 0;} // LAN
+    if (input_lag < 0) {input_lag = 0;} // Input lag cannot be below 0
+    game.input_lag_turns = min(input_lag, MAXIMUM_INPUT_LAG_TURNS);
+    MULTIPLAYER_LOG("Average Ping: %dms (samples: %d), Adjusted Ping: %.2fms, Setting Input Lag: %d", (int)average_ping, sample_count, adjusted_ping, game.input_lag_turns);
 }
-/*
-    if (average_ping < 160) { // 151,157,160, // Clumsy ~51
-        input_lag = 1;
-    } else if (average_ping < 240) { //240,238,240, // Clumsy ~95
-        input_lag = 2;
-    } else if (average_ping < 320) { //321,325,315 // Clumsy ~129
-        input_lag = 3;
-    } else if (average_ping < 400) { // Clumsy ~193
-        input_lag = 4;
-    } else {
-        input_lag = 5;
-    }
-*/
 
 #ifdef __cplusplus
 }

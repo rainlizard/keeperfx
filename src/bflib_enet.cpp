@@ -16,6 +16,7 @@
 #include "bflib_enet.h"
 #include "bflib_datetm.h"
 #include "bflib_network.h"
+#include "bflib_network_internal.h"
 #include "front_network.h"
 #include "bflib_math.h"
 #include "net_portforward.h"
@@ -34,7 +35,6 @@
 #include "post_inc.h"
 
 #define NUM_CHANNELS 2
-#define MAX_PEERS 2
 #define PEER_TIMEOUT_MIN_MS 4000
 #define PEER_TIMEOUT_MAX_MS 10000
 #define HOLEPUNCH_CONNECT_DELAY_MS 1000
@@ -54,16 +54,53 @@ namespace
     int host_is_dual_stack = 0;
 
     // List
-    ENetPacket *oldest_packet = nullptr;
-    ENetPacket *newest_packet = nullptr;
+    ENetPacket *oldest_packet[MAX_N_USERS] = {nullptr};
+    ENetPacket *newest_packet[MAX_N_USERS] = {nullptr};
     int incoming_queue_size = 0;
+
+    void enqueue_incoming_packet(ENetPacket *packet, NetUserId source)
+    {
+        packet->userData = nullptr;
+        if (oldest_packet[source] == nullptr) {
+            newest_packet[source] = packet;
+            oldest_packet[source] = packet;
+        } else {
+            newest_packet[source]->userData = packet;
+            newest_packet[source] = packet;
+        }
+        incoming_queue_size += 1;
+        if (incoming_queue_size > 50) {
+            fprintf(stderr, "Too many packets %d\n", incoming_queue_size);
+            WARNLOG("Too many packets %d", incoming_queue_size);
+        }
+    }
+
+    void destroy_incoming_queue(NetUserId source)
+    {
+        for (ENetPacket *packet = oldest_packet[source]; packet != nullptr;) {
+            ENetPacket *current_packet = packet;
+            packet = static_cast<ENetPacket *>(packet->userData);
+            enet_packet_destroy(current_packet);
+            incoming_queue_size -= 1;
+        }
+        oldest_packet[source] = nullptr;
+        newest_packet[source] = nullptr;
+    }
+
+    void destroy_incoming_queue()
+    {
+        for (NetUserId source = 0; source < MAX_N_USERS; source++)
+        {
+            destroy_incoming_queue(source);
+        }
+    }
 
     ENetHost *create_ipv6_host(enet_uint16 port)
     {
         ENetAddress bind_address;
         enet_address_build_any(&bind_address, ENET_ADDRESS_TYPE_IPV6);
         bind_address.port = port;
-        return enet_host_create(ENET_ADDRESS_TYPE_IPV6, &bind_address, MAX_PEERS, NUM_CHANNELS, 0, 0);
+        return enet_host_create(ENET_ADDRESS_TYPE_IPV6, &bind_address, 2, NUM_CHANNELS, 0, 0);
     }
 
     TbError bf_enet_init(NetDropCallback drop_callback)
@@ -76,22 +113,9 @@ namespace
 
     void host_destroy()
     {
-        if (oldest_packet)
-        {
-            for (ENetPacket *packet = oldest_packet; packet != nullptr;)
-            {
-                ENetPacket *current_packet = packet;
-                packet = static_cast<ENetPacket *>(packet->userData);
-                enet_packet_destroy(current_packet);
-            }
-
-            oldest_packet = nullptr;
-            newest_packet = nullptr;
-            incoming_queue_size = 0;
-        }
+        destroy_incoming_queue();
         client_peer = nullptr;
-        if (host)
-        {
+        if (host) {
             for (ENetPeer *peer = host->peers; peer < &host->peers[host->peerCount]; peer++) {
                 if (peer->state == ENET_PEER_STATE_CONNECTED) {
                     enet_peer_disconnect(peer, 0);
@@ -133,7 +157,7 @@ namespace
         ENetAddress address;
         enet_address_build_any(&address, ENET_ADDRESS_TYPE_IPV6);
         address.port = actual_port;
-        host = enet_host_create(ENET_ADDRESS_TYPE_ANY, &address, MAX_PEERS, NUM_CHANNELS, 0, 0);
+        host = enet_host_create(ENET_ADDRESS_TYPE_ANY, &address, MAX_N_PEERS, NUM_CHANNELS, 0, 0);
         if (host) {
             host_is_dual_stack = 1;
             address = host->address;
@@ -142,7 +166,7 @@ namespace
             LbNetLog("ENet: dual-stack host creation failed, falling back to IPv4-only\n");
             enet_address_build_any(&address, ENET_ADDRESS_TYPE_IPV4);
             address.port = actual_port;
-            host = enet_host_create(ENET_ADDRESS_TYPE_IPV4, &address, MAX_PEERS, NUM_CHANNELS, 0, 0);
+            host = enet_host_create(ENET_ADDRESS_TYPE_IPV4, &address, MAX_N_PEERS, NUM_CHANNELS, 0, 0);
             if (!host)
                 return Lb_FAIL;
             host_is_dual_stack = 0;
@@ -236,7 +260,7 @@ namespace
     TbError create_join_host(ENetAddressType address_type)
     {
         host_destroy();
-        host = enet_host_create(address_type, NULL, MAX_PEERS, NUM_CHANNELS, 0, 0);
+        host = enet_host_create(address_type, NULL, 2, NUM_CHANNELS, 0, 0);
         if (!host) {
             LbNetLog("Join: failed to create ENet host\n");
             return Lb_FAIL;
@@ -502,34 +526,27 @@ namespace
                 break;
             case ENET_EVENT_TYPE_DISCONNECT:
             case ENET_EVENT_TYPE_DISCONNECT_TIMEOUT: {
-                user_id = NetUserId(reinterpret_cast<ptrdiff_t>(enet_event.peer->data));
+                if (client_peer && client_peer == enet_event.peer) {
+                    user_id = SERVER_ID;
+                } else {
+                    user_id = NetUserId(reinterpret_cast<ptrdiff_t>(enet_event.peer->data));
+                }
                 const char *disconnect_reason = "timed out";
                 if (enet_event.type == ENET_EVENT_TYPE_DISCONNECT)
                     disconnect_reason = "disconnected (clean)";
+                destroy_incoming_queue(user_id);
                 LbNetLog("ENet: peer %d %s\n", (int)user_id, disconnect_reason);
                 g_drop_callback(user_id, NETDROP_ERROR);
                 break;
             }
-            case ENET_EVENT_TYPE_RECEIVE:
-                enet_event.packet->userData = nullptr;
-                if (oldest_packet == nullptr)
-                {
-                    newest_packet = enet_event.packet;
-                    oldest_packet = newest_packet;
-                    incoming_queue_size = 1;
+            case ENET_EVENT_TYPE_RECEIVE: {
+                user_id = SERVER_ID;
+                if (!client_peer) {
+                    user_id = NetUserId(reinterpret_cast<ptrdiff_t>(enet_event.peer->data));
                 }
-                else
-                {
-                    newest_packet->userData = enet_event.packet;
-                    newest_packet = enet_event.packet;
-                    incoming_queue_size += 1;
-                    if (incoming_queue_size > 50)
-                    {
-                        fprintf(stderr, "Too many packets %d\n", incoming_queue_size);
-                        WARNLOG("Too many packets %d", incoming_queue_size);
-                    }
-                }
+                enqueue_incoming_packet(enet_event.packet, user_id);
                 return 1;
+            }
             case ENET_EVENT_TYPE_NONE:
                 break;
         }
@@ -625,6 +642,34 @@ namespace
         return false;
     }
 
+    bool wait_for_incoming_packet(NetUserId source, unsigned timeout)
+    {
+        if ((oldest_packet[source] != nullptr)) { return true; }
+
+        TbClockMSec start = LbTimerClock();
+        while (true)
+        {
+            unsigned wait_ms = 0;
+            if (timeout > 0)
+            {
+                TbClockMSec elapsed = LbTimerClock() - start;
+                if (elapsed >= timeout) {
+                    return false;
+                }
+                wait_ms = (unsigned)(timeout - elapsed);
+            }
+
+            NetNewUserCallback new_user_callback;
+            if (!client_peer) {
+                new_user_callback = OnNewUser;
+            } else {
+                new_user_callback = not_expected_user;
+            }
+            if (bf_enet_read_event(new_user_callback, wait_ms) <= 0) { return false; }
+            if ((oldest_packet[source] != nullptr)) { return true; }
+            if (timeout == 0) { return false; }
+        }
+    }
     /**
      * Completely reads a message. Blocks until entire message has been read.
      * Will not block if msgready has returned > 0.
@@ -634,16 +679,18 @@ namespace
      * @return The actual size of the message received, <= max_size. If 0, an
      *  error occurred.
      */
-    size_t bf_enet_readmsg(NetUserId, char *buffer, size_t max_size)
+    size_t bf_enet_readmsg(NetUserId source, char *buffer, size_t max_size)
     {
-        while (!oldest_packet)
+        if (!(oldest_packet[source] != nullptr))
         {
-            bf_enet_read_event(not_expected_user, 0);
+            if (!wait_for_incoming_packet(source, 0)) {
+                return 0;
+            }
         }
-        ENetPacket *packet = oldest_packet;
-        oldest_packet = static_cast<ENetPacket *>(oldest_packet->userData);
-        if (oldest_packet == nullptr) {
-            newest_packet = nullptr;
+        ENetPacket *packet = oldest_packet[source];
+        oldest_packet[source] = static_cast<ENetPacket *>(oldest_packet[source]->userData);
+        if (oldest_packet[source] == nullptr) {
+            newest_packet[source] = nullptr;
         }
         incoming_queue_size--;
 
@@ -664,15 +711,12 @@ namespace
      *  for a message to arrive before returning.
      * @return The size of the message waiting if there is a message, otherwise 0.
      */
-    size_t bf_enet_msgready(NetUserId, unsigned timeout)
+    size_t bf_enet_msgready(NetUserId source, unsigned timeout)
     {
-        if (!oldest_packet)
-        {
-            bf_enet_read_event(not_expected_user, timeout);
+        if (!wait_for_incoming_packet(source, timeout)) {
+            return 0;
         }
-        if (oldest_packet)
-            return oldest_packet->dataLength;
-        return 0;
+        return oldest_packet[source]->dataLength;
     }
 
     /**

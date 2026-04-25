@@ -1664,7 +1664,8 @@ static void replace_disconnected_players_with_ai(void) {
     setup_count_players();
 }
 
-static void load_old_packets(PlayerNumber my_packet_num) {
+static void load_old_packets(PlayerNumber my_packet_num)
+{
     GameTurn historical_turn = get_gameturn() - game.input_lag_turns;
     const struct Packet* received_packets = get_received_packets_for_turn(historical_turn);
     const char* received_packets_status;
