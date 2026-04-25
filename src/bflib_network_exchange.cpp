@@ -36,19 +36,15 @@
 #ifdef __cplusplus
 extern "C" void network_yield_draw_gameplay();
 extern "C" void network_yield_draw_frontend();
-extern "C" long double last_draw_completed_time;
 extern "C" void LbNetwork_TimesyncBarrier(void);
 extern "C" TbBool keeper_screen_redraw(void);
 extern "C" TbResult LbScreenSwap(void);
-long double get_time_tick_ns();
 #endif
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 /******************************************************************************/
-
-#define NETWORK_FPS 60
 
 TbError ProcessMessage(NetUserId source, void* server_buf, size_t frame_size);
 
@@ -68,27 +64,21 @@ static TbBool can_exchange_with_peer(NetUserId peer_id) {
         (my_player_number == get_host_player_id() || peer_id == SERVER_ID);
 }
 
-static TbBool drain_exchange_messages_for_peer(NetUserId peer_id, void* server_buf, size_t frame_size, enum NetMessageType msg_type, TbBool* received_frames)
+static inline TbBool drain_exchange_messages_for_peers(void* server_buf, size_t frame_size, unsigned wait_time)
 {
-    TbBool processed_message = false;
-    while (netstate.sp->msgready(peer_id, 0)) {
-        ProcessMessage(peer_id, server_buf, frame_size);
-        processed_message = true;
-        if (received_frames != NULL && (enum NetMessageType)netstate.msg_buffer[0] == msg_type) {
-            NetUserId frame_peer_id = (NetUserId)netstate.msg_buffer[1];
-            received_frames[frame_peer_id] = true;
+    TbBool has_remote_peer = false;
+    for (NetUserId peer_id = 0; peer_id < netstate.max_players; peer_id += 1) {
+        if (!can_exchange_with_peer(peer_id)) {
+            continue;
+        }
+        has_remote_peer = true;
+        if (netstate.sp->msgready(peer_id, wait_time)) {
+            while (netstate.sp->msgready(peer_id, 0)) {
+                ProcessMessage(peer_id, server_buf, frame_size);
+            }
         }
     }
-    return processed_message;
-}
-
-static void network_exchange_yield(enum NetMessageType msg_type)
-{
-    if (msg_type == NETMSG_FRONTEND) {
-        network_yield_draw_frontend();
-    } else {
-        network_yield_draw_gameplay();
-    }
+    return has_remote_peer;
 }
 
 void SendMessage(NetUserId dest, const char* end_ptr) {
@@ -330,146 +320,90 @@ TbError LbNetwork_ExchangeLogin(char *plyr_name) {
     return Lb_OK;
 }
 
-void LbNetwork_WaitForMissingPackets(void* server_buf, size_t client_frame_size)
+TbError LbNetwork_ExchangeGameplay(void *send_buf, void *server_buf, size_t client_frame_size)
 {
-    if (game.skip_initial_input_turns > 0) {
-        return;
+    if (netstate.my_id < 0 || netstate.my_id >= netstate.max_players) {
+        ERRORLOG("Invalid my_id %i in LbNetwork_ExchangeGameplay (disconnected?)", netstate.my_id);
+        return Lb_FAIL;
     }
-    struct PlayerInfo* my_player = get_my_player();
-    PlayerNumber local_packet_num = 0;
-    if (player_exists(my_player)) {
-        local_packet_num = my_player->packet_num;
-    }
-    GameTurn historical_turn = get_gameturn() - game.input_lag_turns;
-    if (!have_received_all_packets_for_turn(historical_turn, local_packet_num)) {
-        MULTIPLAYER_LOG("LbNetwork_WaitForMissingPackets: Missing packets for turn=%lu, waiting...", (unsigned long)historical_turn);
-        TbClockMSec start = LbTimerClock();
-        while (true) {
-            int elapsed = LbTimerClock() - start;
-            TbBool has_remote_peer = false;
-            if (elapsed >= TIMEOUT_GAMEPLAY_MISSING_PACKET) {
-                MULTIPLAYER_LOG("LbNetwork_WaitForMissingPackets: Timeout waiting for turn=%lu packets", (unsigned long)historical_turn);
-                break;
-            }
+    netstate.sp->update(OnNewUser);
+    memcpy(((char*)server_buf) + netstate.my_id * client_frame_size, send_buf, client_frame_size);
+    SendFrameToPeers(netstate.my_id, send_buf, client_frame_size, netstate.seq_nbr, NETMSG_GAMEPLAY);
 
-            netstate.sp->update(OnNewUser);
-            const int wait_time = min(TIMEOUT_GAMEPLAY_MISSING_PACKET - elapsed, 100);
-            for (NetUserId peer_id = 0; peer_id < netstate.max_players; peer_id += 1) {
-                if (!can_exchange_with_peer(peer_id)) { continue; }
-
-                has_remote_peer = true;
-                if (netstate.sp->msgready(peer_id, wait_time)) {
-                    drain_exchange_messages_for_peer(peer_id, server_buf, client_frame_size, NETMSG_GAMEPLAY, NULL);
+    drain_exchange_messages_for_peers(server_buf, client_frame_size, 0);
+    if (game.skip_initial_input_turns <= 0) {
+        struct PlayerInfo* my_player = get_my_player();
+        PlayerNumber local_packet_num = 0;
+        if (player_exists(my_player)) {
+            local_packet_num = my_player->packet_num;
+        }
+        GameTurn historical_turn = get_gameturn() - game.input_lag_turns;
+        if (!have_received_all_packets_for_turn(historical_turn, local_packet_num)) {
+            MULTIPLAYER_LOG("LbNetwork_ExchangeGameplay: Missing packets for turn=%lu, waiting...", (unsigned long)historical_turn);
+            TbClockMSec start = LbTimerClock();
+            while (true) {
+                int32_t elapsed = LbTimerClock() - start;
+                if (elapsed >= TIMEOUT_GAMEPLAY_MISSING_PACKET) {
+                    MULTIPLAYER_LOG("LbNetwork_ExchangeGameplay: Timeout waiting for turn=%lu packets", (unsigned long)historical_turn);
+                    break;
                 }
-            }
-            if (!has_remote_peer) {
-                break;
-            }
 
-            if (have_received_all_packets_for_turn(historical_turn, local_packet_num)) {
-                MULTIPLAYER_LOG("LbNetwork_WaitForMissingPackets: Successfully received packets for turn=%lu after %dms", (unsigned long)historical_turn, elapsed);
-                break;
-            }
+                netstate.sp->update(OnNewUser);
+                unsigned wait_time = min(TIMEOUT_GAMEPLAY_MISSING_PACKET - elapsed, 100);
+                if (!drain_exchange_messages_for_peers(server_buf, client_frame_size, wait_time)) {
+                    break;
+                }
 
-            network_yield_draw_gameplay();
+                if (have_received_all_packets_for_turn(historical_turn, local_packet_num)) {
+                    MULTIPLAYER_LOG("LbNetwork_ExchangeGameplay: Successfully received packets for turn=%lu after %dms", (unsigned long)historical_turn, elapsed);
+                    break;
+                }
+
+                network_yield_draw_gameplay();
+            }
         }
     }
+    netstate.seq_nbr += 1;
+    return Lb_OK;
 }
 
-TbError LbNetwork_Exchange(enum NetMessageType msg_type, void *send_buf, void *server_buf, size_t client_frame_size) {
+TbError LbNetwork_ExchangeWithWait(enum NetMessageType msg_type, void *send_buf, void *server_buf, size_t client_frame_size)
+{
     if (netstate.my_id < 0 || netstate.my_id >= netstate.max_players) {
-        ERRORLOG("Invalid my_id %i in LbNetwork_Exchange (disconnected?)", netstate.my_id);
+        ERRORLOG("Invalid my_id %i in LbNetwork_ExchangeWithWait (disconnected?)", netstate.my_id);
         return Lb_FAIL;
     }
     netstate.sp->update(OnNewUser);
     memcpy(((char*)server_buf) + netstate.my_id * client_frame_size, send_buf, client_frame_size);
     SendFrameToPeers(netstate.my_id, send_buf, client_frame_size, netstate.seq_nbr, msg_type);
 
-    long double draw_interval_nanoseconds = 1000000000.0 / NETWORK_FPS;
-    if (msg_type == NETMSG_FRONTEND) {
-        draw_interval_nanoseconds = 0;
-    }
-    int timeout_max = TIMEOUT_LOBBY_EXCHANGE;
-    if (msg_type == NETMSG_GAMEPLAY) {
-        timeout_max = (1000 / game_num_fps);
-    }
-    TbBool host_relay = uses_host_relay(msg_type);
     TbBool received_frames[MAX_N_USERS] = {false};
-    if (host_relay && my_player_number == get_host_player_id()) {
-        TbClockMSec start = LbTimerClock();
-        while (true) {
-            TbBool all_received = true;
-            TbBool has_remote_peer = false;
-            for (NetUserId peer_id = 0; peer_id < netstate.max_players; peer_id += 1) {
-                if (!can_exchange_with_peer(peer_id)) {
-                    continue;
-                }
-                has_remote_peer = true;
-                if (!received_frames[peer_id]) {
-                    all_received = false;
-                }
-            }
-            if (all_received || !has_remote_peer) {
-                break;
-            }
-
-            int elapsed = LbTimerClock() - start;
-            if (elapsed >= timeout_max) {
-                break;
-            }
-
-            long long time_since_draw_nanoseconds = get_time_tick_ns() - last_draw_completed_time;
-            int remaining_time_until_draw = (int)((draw_interval_nanoseconds - time_since_draw_nanoseconds) / 1000000.0);
-            if (remaining_time_until_draw < 0) {remaining_time_until_draw = 0;}
-            int wait = min(timeout_max - elapsed, remaining_time_until_draw);
-
-            netstate.sp->update(OnNewUser);
-            TbBool waited = false;
-            for (NetUserId peer_id = 0; peer_id < netstate.max_players; peer_id += 1) {
-                if (!can_exchange_with_peer(peer_id)) {
-                    continue;
-                }
-                int peer_wait = 0;
-                if (!waited) {
-                    peer_wait = wait;
-                    waited = true;
-                }
-                if (netstate.sp->msgready(peer_id, peer_wait)) {
-                    drain_exchange_messages_for_peer(peer_id, server_buf, client_frame_size, msg_type, received_frames);
-                }
-            }
-            network_exchange_yield(msg_type);
-        }
-        netstate.seq_nbr += 1;
-        return Lb_OK;
-    }
-
     for (NetUserId peer_id = 0; peer_id < netstate.max_players; peer_id += 1) {
-        if (host_relay) {
-            if (!can_exchange_with_peer(peer_id)) { continue; }
-        } else if (!IsUserActive(peer_id)) {
+        if (!can_exchange_with_peer(peer_id)) {
             continue;
         }
 
         TbClockMSec start = LbTimerClock();
         while (true) {
-            int elapsed = LbTimerClock() - start;
-            if (elapsed >= timeout_max) {
+            TbClockMSec elapsed = LbTimerClock() - start;
+            if (elapsed >= TIMEOUT_LOBBY_EXCHANGE) {
                 break;
             }
             if (netstate.users[peer_id].progress == USER_UNUSED) {
                 break;
             }
 
-            long long time_since_draw_nanoseconds = get_time_tick_ns() - last_draw_completed_time;
-            int remaining_time_until_draw = (int)((draw_interval_nanoseconds - time_since_draw_nanoseconds) / 1000000.0);
-            if (remaining_time_until_draw < 0) {remaining_time_until_draw = 0;}
-            int wait = min(timeout_max - elapsed, remaining_time_until_draw);
-
-            if (netstate.sp->msgready(peer_id, wait)) {
-                drain_exchange_messages_for_peer(peer_id, server_buf, client_frame_size, msg_type, received_frames);
-                if (!host_relay) {
-                    break;
+            TbClockMSec wait_ms = TIMEOUT_LOBBY_EXCHANGE - elapsed;
+            if (wait_ms > 16) {
+                wait_ms = 16;
+            }
+            if (netstate.sp->msgready(peer_id, wait_ms)) {
+                while (netstate.sp->msgready(peer_id, 0)) {
+                    ProcessMessage(peer_id, server_buf, client_frame_size);
+                    if ((enum NetMessageType)netstate.msg_buffer[0] == msg_type) {
+                        NetUserId frame_peer_id = (NetUserId)netstate.msg_buffer[1];
+                        received_frames[frame_peer_id] = true;
+                    }
                 }
                 if (my_player_number == get_host_player_id()) {
                     if (received_frames[peer_id]) {
@@ -478,15 +412,26 @@ TbError LbNetwork_Exchange(enum NetMessageType msg_type, void *send_buf, void *s
                 } else {
                     TbBool all_received = true;
                     for (NetUserId id = 0; id < netstate.max_players; id += 1) {
-                        if (id == netstate.my_id || !IsUserActive(id)) { continue; }
-                        if (!received_frames[id]) { all_received = false; break; }
+                        if (id == netstate.my_id || !IsUserActive(id)) {
+                            continue;
+                        }
+                        if (!received_frames[id]) {
+                            all_received = false;
+                            break;
+                        }
                     }
-                    if (all_received) { break; }
+                    if (all_received) {
+                        break;
+                    }
                 }
             }
 
-            if (LbTimerClock() - start < timeout_max) {
-                network_exchange_yield(msg_type);
+            if (LbTimerClock() - start < TIMEOUT_LOBBY_EXCHANGE) {
+                if (msg_type == NETMSG_FRONTEND) {
+                    network_yield_draw_frontend();
+                } else {
+                    network_yield_draw_gameplay();
+                }
             }
         }
     }

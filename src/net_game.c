@@ -215,7 +215,7 @@ static CoroutineLoopState net_startup_wait_for_players_and_exchange(CoroutineLoo
 {
     (void)context;
     memset(s_startup_sync_packets, 0, sizeof(s_startup_sync_packets));
-    LbNetwork_Exchange(NETMSG_STARTUP_SYNC, &s_local_startup_sync, s_startup_sync_packets, sizeof(struct StartupSyncPacket));
+    LbNetwork_ExchangeWithWait(NETMSG_STARTUP_SYNC, &s_local_startup_sync, s_startup_sync_packets, sizeof(struct StartupSyncPacket));
     if (!all_human_players_sent_startup_sync()) {
         return CLS_REPEAT;
     }
