@@ -851,11 +851,6 @@ void frontend_main_menu_highscores_maintain(struct GuiButton *gbtn)
     gbtn->flags |= LbBtnF_Enabled;
 }
 
-TbBool frontend_should_all_players_quit(void)
-{
-    return (net_service_index_selected <= 1);
-}
-
 TbBool frontend_is_player_allied(long idx1, long idx2)
 {
     if (idx1 == idx2)

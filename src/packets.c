@@ -562,6 +562,67 @@ void message_text_key_add(char *message, TbKeyCode key, TbKeyMods kmodif)
     }
 }
 
+static void resolve_network_quit_outcome(struct PlayerInfo *player)
+{
+    if (player->victory_state != VicS_Undecided) {
+        return;
+    }
+    if (player_cannot_win(player->id_number)) {
+        set_player_as_lost_level(player);
+        return;
+    }
+    set_player_as_won_level(player);
+}
+
+static TbBool network_has_connected_human_opponents(void)
+{
+    for (int i = 0; i < PLAYERS_COUNT; i++) {
+        struct PlayerInfo* player = get_player(i);
+        if (player_exists(player) && !is_my_player(player) && player->is_active == 1 && (player->allocflags & PlaF_CompCtrl) == 0 && player->victory_state == VicS_Undecided && network_player_active(player->packet_num)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static TbBool replace_network_player_with_ai(struct PlayerInfo *player, const char *departure_message)
+{
+    if (is_my_player(player) || (player->allocflags & PlaF_CompCtrl) != 0 || player->victory_state != VicS_Undecided) {
+        return false;
+    }
+    player->allocflags |= PlaF_CompCtrl;
+    toggle_computer_player(player->id_number);
+    if (player->player_name[0] != '\0') {
+        message_add_fmt(MsgType_Player, player->id_number, "%s %s", player->player_name, departure_message);
+        JUSTLOG("p:%d %s %s", player->id_number, player->player_name, departure_message);
+    }
+    message_add(MsgType_Player, player->id_number, "I am the computer now!");
+    JUSTLOG("p:%d I am the computer now!", player->id_number);
+    return true;
+}
+
+static void stop_network_game_and_quit(short complete_quit)
+{
+    LbNetwork_Stop();
+    quit_game = 1;
+    if (complete_quit) {
+        exit_keeper = 1;
+    }
+}
+
+static void stop_network_game_and_continue_locally(void)
+{
+    LbNetwork_Stop();
+    game.input_lag_turns = 0;
+    game.skip_initial_input_turns = 0;
+    memset(net_player_info, 0, sizeof(net_player_info));
+    clear_flag(game.system_flags, GSF_NetworkActive);
+    fe_network_active = 0;
+    game.game_kind = GKind_LocalGame;
+    setup_count_players();
+    get_my_player()->display_objective_turn = get_gameturn() + 1;
+}
+
 void process_chat_message_end(int player_id, const char *message)
 {
     struct PlayerInfo *player = get_player(player_id);
@@ -585,85 +646,51 @@ void process_chat_message_end(int player_id, const char *message)
 
 void process_quit_packet(struct PlayerInfo *player, short complete_quit)
 {
-    struct PlayerInfo *swplyr;
     struct PlayerInfo* myplyr = get_my_player();
-    int32_t plyr_count;
-    plyr_count = 0;
-    if ((game.system_flags & GSF_NetworkActive) != 0)
-    {
-        short winning_quit = winning_player_quitting(player, &plyr_count);
-        if (winning_quit)
-        {
-            // Set other players as losers
-            for (int i = 0; i < PLAYERS_COUNT; i++)
-            {
-                swplyr = get_player(i);
-                if (player_exists(swplyr))
-                {
-                    if (swplyr->is_active == 1)
-                        if (swplyr->victory_state == VicS_Undecided)
-                            swplyr->victory_state = VicS_WonLevel;
-                }
-            }
-      }
-
-      if ((player == myplyr) || (frontend_should_all_players_quit()))
-      {
-        if ((!winning_quit) || (plyr_count <= 1))
-          LbNetwork_Stop();
-        else
-          myplyr->additional_flags |= PlaAF_UnlockedLordTorture;
-      } else
-      {
-        if (!winning_quit)
-        {
-          if (player->victory_state != VicS_Undecided)
-          {
-            player->allocflags &= ~PlaF_Allocated;
-          } else
-          {
-            player->allocflags |= PlaF_CompCtrl;
-            toggle_computer_player(player->id_number);
-          }
-          if (player == myplyr)
-          {
-            quit_game = 1;
-            if (complete_quit)
-              exit_keeper = 1;
-          }
-          return;
-        } else
-        if (plyr_count <= 1)
-          LbNetwork_Stop();
-        else
-          myplyr->additional_flags |= PlaAF_UnlockedLordTorture;
-      }
-      quit_game = 1;
-      if (complete_quit)
-        exit_keeper = 1;
-      if (frontend_should_all_players_quit())
-      {
-        for (int i=0; i < PLAYERS_COUNT; i++)
-        {
-          swplyr = get_player(i);
-          if (player_exists(swplyr))
-          {
-            swplyr->allocflags &= ~PlaF_Allocated;
-            swplyr->display_flags |= PlaF6_PlyrHasQuit;
-          }
-        }
-      } else
-      {
+    if ((game.system_flags & GSF_NetworkActive) == 0) {
         player->allocflags &= ~PlaF_Allocated;
-      }
-      return;
+        if (player == myplyr) {
+            quit_game = 1;
+            if (complete_quit) {
+                exit_keeper = 1;
+            }
+        }
+        return;
     }
-    player->allocflags &= ~PlaF_Allocated;
-    if (player == myplyr)
-    {
-        quit_game = 1;
-        if (complete_quit)
-          exit_keeper = 1;
+
+    int32_t plyr_count = 0;
+    short winning_quit = winning_player_quitting(player, &plyr_count);
+    TbBool replaced_with_ai = replace_network_player_with_ai(player, "has left the game.");
+    TbBool has_human_opponents = network_has_connected_human_opponents();
+    if (has_human_opponents && replaced_with_ai) {
+        return;
+    }
+
+    if (winning_quit) {
+        for (int i = 0; i < PLAYERS_COUNT; i++) {
+            struct PlayerInfo* swplyr = get_player(i);
+            if (player_exists(swplyr) && (swplyr->is_active == 1)) {
+                resolve_network_quit_outcome(swplyr);
+            }
+        }
+    }
+
+    if (player == myplyr || player->id_number == get_host_player_id() || !has_human_opponents) {
+        if (player != myplyr) {
+            resolve_network_quit_outcome(myplyr);
+        }
+        if (winning_quit && (plyr_count > 1)) {
+            myplyr->additional_flags |= PlaAF_UnlockedLordTorture;
+        }
+        if ((player != myplyr) && (myplyr->victory_state == VicS_WonLevel)) {
+            stop_network_game_and_continue_locally();
+        } else {
+            stop_network_game_and_quit(complete_quit);
+        }
+    }
+
+    if (!replaced_with_ai) {
+        player->allocflags &= ~PlaF_Allocated;
     }
 }
 
@@ -1625,43 +1652,40 @@ void process_players_creature_control_packet_action(long plyr_idx)
   }
 }
 
-static void replace_disconnected_players_with_ai(void) {
+static void process_disconnected_network_players(void)
+{
     if ((game.system_flags & GSF_NetworkActive) == 0) {
         return;
     }
-    TbBool host_disconnected = (netstate.my_id != SERVER_ID && netstate.users[SERVER_ID].progress == USER_UNUSED);
+    TbBool host_disconnected = false;
+    if ((netstate.my_id != SERVER_ID) && (netstate.users[SERVER_ID].progress == USER_UNUSED)) {
+        host_disconnected = true;
+    }
     for (int player_index = 0; player_index < NET_PLAYERS_COUNT; player_index++) {
         struct PlayerInfo* player = get_player(player_index);
-        if (!player_exists(player) || ((player->allocflags & PlaF_CompCtrl) != 0)) {
+        if (!player_exists(player) || player_index == my_player_number || (!host_disconnected && network_player_active(player_index))) {
             continue;
         }
-        if (host_disconnected && player_index == my_player_number) {
-            continue;
-        }
-        if (!host_disconnected && network_player_active(player_index)) {
-            continue;
-        }
-        if (player->victory_state != VicS_Undecided) {
+        if (!replace_network_player_with_ai(player, "has disconnected.") && player->victory_state != VicS_Undecided) {
             player->allocflags &= ~PlaF_Allocated;
-            continue;
         }
-        message_add(MsgType_Player, player->id_number, "I am the computer now!");
-        JUSTLOG("p:%d I am the computer now!", player->id_number);
-        player->allocflags |= PlaF_CompCtrl;
-        toggle_computer_player(player->id_number);
     }
-    if (!host_disconnected) {
+
+    if (!host_disconnected && network_has_connected_human_opponents()) {
         return;
     }
-    message_add(MsgType_Player, my_player_number, "Network connection to host lost");
-    game.input_lag_turns = 0;
-    game.skip_initial_input_turns = 0;
-    LbNetwork_Stop();
-    memset(net_player_info, 0, sizeof(net_player_info));
-    clear_flag(game.system_flags, GSF_NetworkActive);
-    fe_network_active = 0;
-    game.game_kind = GKind_LocalGame;
-    setup_count_players();
+    struct PlayerInfo* myplyr = get_my_player();
+    resolve_network_quit_outcome(myplyr);
+    const char *message = "Opponent disconnected";
+    if (host_disconnected) {
+        message = "Network connection to host lost";
+    }
+    message_add(MsgType_Player, my_player_number, message);
+    if (myplyr->victory_state == VicS_WonLevel) {
+        stop_network_game_and_continue_locally();
+    } else {
+        stop_network_game_and_quit(false);
+    }
 }
 
 static void load_old_packets(PlayerNumber my_packet_num)
@@ -1748,7 +1772,7 @@ void process_packets(void)
                 ERRORLOG("LbNetwork_ExchangeGameplay failed");
             }
         }
-        replace_disconnected_players_with_ai();
+        process_disconnected_network_players();
     }
 
     MULTIPLAYER_LOG("process_packets: Loading packets from input lag queue");
