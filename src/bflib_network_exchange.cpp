@@ -353,7 +353,7 @@ TbError LbNetwork_ExchangeGameplay(void *send_buf, void *server_buf, size_t clie
             local_packet_num = my_player->packet_num;
         }
         GameTurn historical_turn = get_gameturn() - game.input_lag_turns;
-        if (!have_received_all_packets_for_turn(historical_turn, local_packet_num)) {
+        if (!have_received_all_packets(local_packet_num)) {
             MULTIPLAYER_LOG("LbNetwork_ExchangeGameplay: Missing packets for turn=%lu, waiting...", (unsigned long)historical_turn);
             TbClockMSec start = LbTimerClock();
             while (true) {
@@ -369,7 +369,7 @@ TbError LbNetwork_ExchangeGameplay(void *send_buf, void *server_buf, size_t clie
                     break;
                 }
 
-                if (have_received_all_packets_for_turn(historical_turn, local_packet_num)) {
+                if (have_received_all_packets(local_packet_num)) {
                     MULTIPLAYER_LOG("LbNetwork_ExchangeGameplay: Successfully received packets for turn=%lu after %dms", (unsigned long)historical_turn, elapsed);
                     break;
                 }
