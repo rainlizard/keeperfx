@@ -35,6 +35,7 @@
 
 #ifdef __cplusplus
 extern "C" void network_yield_draw_gameplay();
+extern "C" void network_yield_waiting_gameplay_packets();
 extern "C" void network_yield_draw_frontend();
 extern "C" void LbNetwork_TimesyncBarrier(void);
 extern "C" TbBool keeper_screen_redraw(void);
@@ -274,21 +275,11 @@ TbError ProcessMessage(NetUserId source, void* server_buf, size_t frame_size) {
     return Lb_OK;
 }
 
-static inline TbBool drain_exchange_messages_for_peers(void* server_buf, size_t frame_size, unsigned wait_time)
+static inline void collect_from_peer(NetUserId peer_id, void *server_buf, size_t frame_size)
 {
-    TbBool has_remote_peer = false;
-    for (NetUserId peer_id = 0; peer_id < netstate.max_players; peer_id += 1) {
-        if (!can_exchange_with_peer(peer_id)) {
-            continue;
-        }
-        has_remote_peer = true;
-        if (netstate.sp->msgready(peer_id, wait_time)) {
-            while (netstate.sp->msgready(peer_id, 0)) {
-                ProcessMessage(peer_id, server_buf, frame_size);
-            }
-        }
+    while (netstate.sp->msgready(peer_id, 0)) {
+        ProcessMessage(peer_id, server_buf, frame_size);
     }
-    return has_remote_peer;
 }
 
 TbError LbNetwork_ExchangeLogin(char *plyr_name) {
@@ -345,36 +336,49 @@ TbError LbNetwork_ExchangeGameplay(void *send_buf, void *server_buf, size_t clie
         return Lb_FAIL;
     }
 
-    drain_exchange_messages_for_peers(server_buf, client_frame_size, 0);
+    NetUserId peer_id;
+    for (peer_id = 0; peer_id < netstate.max_players; peer_id += 1) {
+        if (!can_exchange_with_peer(peer_id)) {
+            continue;
+        }
+        collect_from_peer(peer_id, server_buf, client_frame_size);
+    }
     if (game.skip_initial_input_turns <= 0) {
         struct PlayerInfo* my_player = get_my_player();
-        PlayerNumber local_packet_num = 0;
         if (player_exists(my_player)) {
-            local_packet_num = my_player->packet_num;
-        }
-        GameTurn historical_turn = get_gameturn() - game.input_lag_turns;
-        if (!have_received_all_packets(local_packet_num)) {
-            MULTIPLAYER_LOG("LbNetwork_ExchangeGameplay: Missing packets for turn=%lu, waiting...", (unsigned long)historical_turn);
-            TbClockMSec start = LbTimerClock();
-            while (true) {
-                int32_t elapsed = LbTimerClock() - start;
-                if (elapsed >= TIMEOUT_GAMEPLAY_MISSING_PACKET) {
-                    MULTIPLAYER_LOG("LbNetwork_ExchangeGameplay: Timeout waiting for turn=%lu packets", (unsigned long)historical_turn);
-                    break;
+            PlayerNumber local_packet_num = my_player->packet_num;
+            if (!have_received_all_packets(local_packet_num)) {
+                GameTurn historical_turn = get_gameturn() - game.input_lag_turns;
+                TbClockMSec start = LbTimerClock();
+                MULTIPLAYER_LOG("LbNetwork_ExchangeGameplay: Missing packets for turn=%lu, collecting...", (unsigned long)historical_turn);
+                while (!have_received_all_packets(local_packet_num)) {
+                    netstate.sp->update(OnNewUser);
+                    for (peer_id = 0; peer_id < netstate.max_players; peer_id += 1) {
+                        if (!can_exchange_with_peer(peer_id)) {
+                            continue;
+                        }
+                        if (netstate.my_id == SERVER_ID && have_received_packet_from_player(historical_turn, (PlayerNumber)peer_id)) {
+                            continue;
+                        }
+                        collect_from_peer(peer_id, server_buf, client_frame_size);
+                        if (have_received_all_packets(local_packet_num)) {
+                            int32_t elapsed = LbTimerClock() - start;
+                            MULTIPLAYER_LOG("LbNetwork_ExchangeGameplay: Completed wait for turn=%lu after %dms", (unsigned long)historical_turn, elapsed);
+                            break;
+                        }
+                    }
+                    if (have_received_all_packets(local_packet_num)) {
+                        break;
+                    }
+                    if ((LbTimerClock() - start) >= TIMEOUT_GAMEPLAY_MISSING_PACKET) {
+                        MULTIPLAYER_LOG("LbNetwork_ExchangeGameplay: Missing packets remained for turn=%lu after collection", (unsigned long)historical_turn);
+                        break;
+                    }
+                    network_yield_waiting_gameplay_packets();
+                    if (quit_game || exit_keeper) {
+                        break;
+                    }
                 }
-
-                netstate.sp->update(OnNewUser);
-                unsigned wait_time = min(TIMEOUT_GAMEPLAY_MISSING_PACKET - elapsed, 100);
-                if (!drain_exchange_messages_for_peers(server_buf, client_frame_size, wait_time)) {
-                    break;
-                }
-
-                if (have_received_all_packets(local_packet_num)) {
-                    MULTIPLAYER_LOG("LbNetwork_ExchangeGameplay: Successfully received packets for turn=%lu after %dms", (unsigned long)historical_turn, elapsed);
-                    break;
-                }
-
-                network_yield_draw_gameplay();
             }
         }
     }
