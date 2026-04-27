@@ -1740,6 +1740,9 @@ TbBool frontmap_exchange_screen_packet(void)
           ERRORLOG("LbNetwork_Exchange failed");
           return false;
       }
+      if ((my_player_number == get_host_player_id()) && (net_host_start_level > 0)) {
+          net_host_start_level = SINGLEPLAYER_NOTSTARTED;
+      }
     }
     return true;
 }
