@@ -38,8 +38,9 @@ void store_local_packet_in_input_lag_queue(PlayerNumber my_packet_num) {
     MULTIPLAYER_LOG("store_local_packet_in_input_lag_queue: STORING local packet[%s] turn=%lu checksum=%08lx into queue slot %d", player_name, (unsigned long)game.packets[my_packet_num].turn, (unsigned long)game.packets[my_packet_num].checksum, slot);
 }
 
-struct Packet* get_local_input_lag_packet_for_turn(GameTurn target_turn) {
-    for (int i = 0; i < game.input_lag_turns + 1; i++) {
+struct Packet* get_local_input_lag_packet_for_turn(GameTurn target_turn)
+{
+    for (int i = 0; i < MAXIMUM_INPUT_LAG_TURNS + 1; i++) {
         struct Packet* packet = &local_input_lag_packets[i];
         if (!is_packet_empty(packet) && packet->turn == target_turn) {
             MULTIPLAYER_LOG("get_local_input_lag_packet_for_turn: found packet for turn=%lu in slot %d", (unsigned long)target_turn, i);
