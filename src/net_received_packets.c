@@ -120,9 +120,16 @@ const struct Packet* get_received_packets_for_turn(GameTurn turn)
     return packets_for_turn;
 }
 
-TbBool have_received_all_packets_for_turn(GameTurn turn, PlayerNumber local_packet_num) {
+TbBool have_received_packet_from_player(GameTurn turn, PlayerNumber player)
+{
+    return get_received_packet_for_player(turn, player) != NULL;
+}
+
+TbBool have_received_all_packets(PlayerNumber local_packet_num)
+{
+    GameTurn historical_turn = get_gameturn() - game.input_lag_turns;
     for (PlayerNumber player = 0; player < NET_PLAYERS_COUNT; ++player) {
-        if (player != local_packet_num && network_player_active(player) && get_received_packet_for_player(turn, player) == NULL) {
+        if (player != local_packet_num && network_player_active(player) && !have_received_packet_from_player(historical_turn, player)) {
             return false;
         }
     }

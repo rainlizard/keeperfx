@@ -95,8 +95,7 @@ void unbundle_packets(const char* bundled_buffer, PlayerNumber source_player) {
     int i;
     for (i = 0; i < bundled.valid_count; i += 1) {
         const struct Packet* packet = &bundled.packets[i];
-        const struct Packet* existing = get_received_packet_for_player(packet->turn, source_player);
-        if (existing == NULL) {
+        if (!have_received_packet_from_player(packet->turn, source_player)) {
             store_received_packet(packet->turn, source_player, packet);
         }
     }
