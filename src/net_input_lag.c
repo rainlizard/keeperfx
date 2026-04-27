@@ -142,11 +142,11 @@ void LbNetwork_UpdateInputLagIfHost(void) {
     sample_count++;
     float average_ping = total_ping / sample_count;
     float turn_time = 1000.0f / game_num_fps;
-    float free_space = 0; //(turn_time*0.5); //There is no free space, if you increase this then on the edges you'll get 5% slowdown and more.
+    float half_turn_time = (turn_time*0.5);
     float adjusted_ping = 0;
     switch (mode) {
-        case INPUT_LAG_MODE_ONE_VS_ONE: adjusted_ping = (average_ping - free_space) * 0.5f; break;
-        case INPUT_LAG_MODE_RELAY:      adjusted_ping = (average_ping - free_space); break;
+        case INPUT_LAG_MODE_ONE_VS_ONE: adjusted_ping = (average_ping - half_turn_time) * 0.5f; break;
+        case INPUT_LAG_MODE_RELAY:      adjusted_ping = (average_ping + half_turn_time); break;
     }
     int input_lag = CEILING(adjusted_ping / turn_time);
     if (average_ping < 25) {input_lag = 0;} // LAN
