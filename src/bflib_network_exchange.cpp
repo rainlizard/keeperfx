@@ -47,8 +47,6 @@ extern "C" {
 #endif
 /******************************************************************************/
 
-#define GAMEPLAY_RESEND_INTERVAL_MS 25
-
 char* InitMessageBuffer(enum NetMessageType msg_type)
 {
     char* ptr = netstate.msg_buffer;
@@ -337,6 +335,9 @@ static void collect_messages_from_peer(NetUserId peer_id, void *server_buf, size
 
 static void resend_missing_gameplay_packets_until_received(void *server_buf, size_t frame_size)
 {
+    static const TbClockMSec gameplay_resend_intervals[] = {5, 10, 50};
+    const size_t gameplay_resend_interval_count = sizeof(gameplay_resend_intervals) / sizeof(gameplay_resend_intervals[0]);
+
     if (game.skip_initial_input_turns > 0) {
         return;
     }
@@ -356,6 +357,7 @@ static void resend_missing_gameplay_packets_until_received(void *server_buf, siz
     MULTIPLAYER_LOG("LbNetwork_ExchangeGameplay: Missing packets for turn=%lu, collecting...", (unsigned long)historical_turn);
     resend_stored_gameplay_packets_to_peers(historical_turn);
     TbClockMSec last_resend = LbTimerClock();
+    int32_t resend_attempt = 1;
 
     while (!have_received_all_packets(local_packet_num)) {
         netstate.sp->update(OnNewUser);
@@ -378,9 +380,14 @@ static void resend_missing_gameplay_packets_until_received(void *server_buf, siz
             return;
         }
         TbClockMSec now = LbTimerClock();
-        if (now - last_resend >= GAMEPLAY_RESEND_INTERVAL_MS) {
+        TbClockMSec resend_interval = gameplay_resend_intervals[gameplay_resend_interval_count - 1];
+        if ((size_t)resend_attempt < gameplay_resend_interval_count) {
+            resend_interval = gameplay_resend_intervals[resend_attempt - 1];
+        }
+        if (now - last_resend >= resend_interval) {
             resend_stored_gameplay_packets_to_peers(historical_turn);
             last_resend = now;
+            resend_attempt += 1;
         }
         network_yield_waiting_gameplay_packets();
         if (quit_game || exit_keeper) {
