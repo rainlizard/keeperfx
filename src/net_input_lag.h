@@ -1,10 +1,10 @@
 #ifndef INPUT_LAG_H
 #define INPUT_LAG_H
 
-#include "bflib_basics.h"
 #include "globals.h"
+#include "bflib_basics.h"
 
-#define MAXIMUM_INPUT_LAG_TURNS    12
+#define MAXIMUM_INPUT_LAG_TURNS    16
 
 struct Packet;
 

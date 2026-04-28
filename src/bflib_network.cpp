@@ -30,7 +30,6 @@
 #include "net_game.h"
 #include "front_landview.h"
 #include "front_network.h"
-#include "net_received_packets.h"
 #include "net_matchmaking.h"
 #include "net_lan.h"
 #include "keeperfx.hpp"

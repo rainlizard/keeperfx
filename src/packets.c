@@ -18,7 +18,7 @@
 /******************************************************************************/
 #include "pre_inc.h"
 #include "packets.h"
-#include "net_received_packets.h"
+#include "net_packet_history.h"
 #include "net_input_lag.h"
 #include "net_checksums.h"
 
@@ -1691,7 +1691,7 @@ static void process_disconnected_network_players(void)
 static void load_old_packets(PlayerNumber my_packet_num)
 {
     GameTurn historical_turn = get_gameturn() - game.input_lag_turns;
-    const struct Packet* received_packets = get_received_packets_for_turn(historical_turn);
+    const struct Packet* received_packets = get_received_turn_packets(historical_turn);
     const char* received_packets_status;
     if (received_packets != NULL) {
         received_packets_status = "found";

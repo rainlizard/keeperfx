@@ -35,7 +35,10 @@ extern "C" {
 #define TIMEOUT_CONNECT_DIRECT_IPV4 5000
 #define TIMEOUT_JOIN_LOBBY 2000
 #define TIMEOUT_LOBBY_EXCHANGE 3000
-#define TIMEOUT_GAMEPLAY_MISSING_PACKET 8000
+#define PEER_TIMEOUT_LIMIT 32
+#define PEER_TIMEOUT_MIN_MS 8000
+#define PEER_TIMEOUT_MAX_MS 30000
+#define TIMEOUT_GAMEPLAY_MISSING_PACKET PEER_TIMEOUT_MAX_MS
 /******************************************************************************/
 #pragma pack(1)
 
@@ -66,6 +69,7 @@ enum NetMessageType {
     NETMSG_TIMESYNC_COMPLETE,
     NETMSG_UNPAUSE,
     NETMSG_CHATMESSAGE,
+    NETMSG_GAMEPLAY_PACKET_HISTORY,
 };
 
 typedef TbBool  (*NetNewUserCallback)(NetUserId * assigned_id);

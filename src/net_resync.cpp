@@ -31,8 +31,7 @@
 #include "lens_api.h"
 #include "lua_base.h"
 #include "net_input_lag.h"
-#include "net_received_packets.h"
-#include "net_redundant_packets.h"
+#include "net_packet_history.h"
 #include "net_checksums.h"
 #include "post_inc.h"
 
@@ -363,8 +362,7 @@ void resync_game(void) {
     reinit_level_after_load();
 
     game.skip_initial_input_turns = calculate_skip_input();
-    clear_packet_tracking();
-    initialize_redundant_packets();
+    initialize_packet_history();
     clear_input_lag_queue();
     NETLOG("Input lag after resync: %d turns", game.input_lag_turns);
 

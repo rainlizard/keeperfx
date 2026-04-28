@@ -18,8 +18,7 @@
 /******************************************************************************/
 #include "pre_inc.h"
 #include "packets.h"
-#include "net_received_packets.h"
-#include "net_redundant_packets.h"
+#include "net_packet_history.h"
 
 #include "bflib_fileio.h"
 #include "bflib_network_exchange.h"
@@ -173,8 +172,7 @@ TbBool open_packet_file_for_load(char *fname, struct CatalogueEntry *centry)
 void post_init_packets(void)
 {
     SYNCDBG(6,"Starting");
-    initialize_packet_tracking();
-    initialize_redundant_packets();
+    initialize_packet_history();
     if ((game.packet_load_enable) && (game.packet_load_initialized))
     {
         struct CatalogueEntry centry;

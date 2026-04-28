@@ -35,13 +35,13 @@
 #include "post_inc.h"
 
 #define NUM_CHANNELS 2
-#define PEER_TIMEOUT_MIN_MS 4000
-#define PEER_TIMEOUT_MAX_MS 10000
 #define HOLEPUNCH_CONNECT_DELAY_MS 1000
 #define HOLEPUNCH_PRE_CONNECT_DELAY_MS 500
 #define HAPPY_EYEBALLS_DELAY_MS 250
 #define JOIN_CONNECT_POLL_DELAY_MS 16
 #define ENET_ADDRESS_BUFFER_SIZE 128
+#define INCOMING_QUEUE_WARNING_THRESHOLD 200
+#define INCOMING_QUEUE_WARNING_INTERVAL 100
 
 uint16_t external_ipv4_port = 0;
 int skip_holepunch = 0;
@@ -69,7 +69,10 @@ namespace
             newest_packet[source] = packet;
         }
         incoming_queue_size += 1;
-        if (incoming_queue_size > 50) {
+        if (incoming_queue_size == INCOMING_QUEUE_WARNING_THRESHOLD) {
+            fprintf(stderr, "Too many packets %d\n", incoming_queue_size);
+            WARNLOG("Too many packets %d", incoming_queue_size);
+        } else if (incoming_queue_size > INCOMING_QUEUE_WARNING_THRESHOLD && (incoming_queue_size % INCOMING_QUEUE_WARNING_INTERVAL) == 0) {
             fprintf(stderr, "Too many packets %d\n", incoming_queue_size);
             WARNLOG("Too many packets %d", incoming_queue_size);
         }
@@ -250,7 +253,7 @@ namespace
     TbError finish_join(ENetHost *next_host, ENetPeer *next_peer, ENetHost *old_host, ENetPeer *old_peer,
         const char *join_type, const char *ip_version) {
         LbNetLog("Join: connected successfully via %s (%s)\n", join_type, ip_version);
-        enet_peer_timeout(next_peer, 0, PEER_TIMEOUT_MIN_MS, PEER_TIMEOUT_MAX_MS);
+        enet_peer_timeout(next_peer, PEER_TIMEOUT_LIMIT, PEER_TIMEOUT_MIN_MS, PEER_TIMEOUT_MAX_MS);
         cleanup_join_host(old_host, old_peer);
         host = next_host;
         client_peer = next_peer;
@@ -286,7 +289,7 @@ namespace
             int service_result = enet_host_service(host, &enet_event, 0);
             if (service_result > 0 && enet_event.type == ENET_EVENT_TYPE_CONNECT) {
                 LbNetLog("Join: connected successfully via %s\n", join_type);
-                enet_peer_timeout(client_peer, 0, PEER_TIMEOUT_MIN_MS, PEER_TIMEOUT_MAX_MS);
+                enet_peer_timeout(client_peer, PEER_TIMEOUT_LIMIT, PEER_TIMEOUT_MIN_MS, PEER_TIMEOUT_MAX_MS);
                 return Lb_OK;
             }
             if (service_result > 0 && (enet_event.type == ENET_EVENT_TYPE_DISCONNECT || enet_event.type == ENET_EVENT_TYPE_DISCONNECT_TIMEOUT)) {
@@ -517,7 +520,7 @@ namespace
             case ENET_EVENT_TYPE_CONNECT:
                 LbNetLog("ENet: incoming connection accepted\n");
                 if (new_user(&user_id)) {
-                    enet_peer_timeout(enet_event.peer, 0, PEER_TIMEOUT_MIN_MS, PEER_TIMEOUT_MAX_MS);
+                    enet_peer_timeout(enet_event.peer, PEER_TIMEOUT_LIMIT, PEER_TIMEOUT_MIN_MS, PEER_TIMEOUT_MAX_MS);
                     enet_event.peer->data = reinterpret_cast<void *>(user_id);
                 } else {
                     LbNetLog("ENet: rejecting peer, no user slot available\n");
