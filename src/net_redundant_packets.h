@@ -41,9 +41,9 @@ struct BundledPacket {
 #pragma pack()
 /******************************************************************************/
 void initialize_redundant_packets(void);
-size_t bundle_packets(PlayerNumber player, const struct Packet* current_packet, char* out_buffer);
-size_t bundle_stored_packets(PlayerNumber player, char* out_buffer);
-TbBool unbundle_packets(const char* bundled_buffer, size_t bundled_buffer_size, PlayerNumber source_player);
+size_t bundle_current_packet_with_redundant_history(PlayerNumber player, const struct Packet* current_packet, char* out_buffer);
+size_t bundle_redundant_packet_history(PlayerNumber player, char* out_buffer);
+TbBool store_redundant_packets_from_message(const char* bundled_buffer, size_t bundled_buffer_size, PlayerNumber source_player);
 
 /******************************************************************************/
 #ifdef __cplusplus
