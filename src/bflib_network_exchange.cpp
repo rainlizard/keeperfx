@@ -118,10 +118,13 @@ void SendFrameToPeers(NetUserId source_id, const void* send_buf, size_t buf_size
     }
 }
 
-static void resend_stored_gameplay_packets_to_peers(void)
+static void resend_stored_gameplay_packets_to_peers(GameTurn historical_turn)
 {
     for (NetUserId destination = 0; destination < netstate.max_players; destination += 1) {
         if (!can_send_directly_to_peer(destination)) {
+            continue;
+        }
+        if (netstate.my_id == SERVER_ID && have_received_packet_from_player(historical_turn, (PlayerNumber)destination)) {
             continue;
         }
         for (PlayerNumber player = 0; player < netstate.max_players; player += 1) {
@@ -351,7 +354,7 @@ static void resend_missing_gameplay_packets_until_received(void *server_buf, siz
     GameTurn historical_turn = get_gameturn() - game.input_lag_turns;
     TbClockMSec start = LbTimerClock();
     MULTIPLAYER_LOG("LbNetwork_ExchangeGameplay: Missing packets for turn=%lu, collecting...", (unsigned long)historical_turn);
-    resend_stored_gameplay_packets_to_peers();
+    resend_stored_gameplay_packets_to_peers(historical_turn);
     TbClockMSec last_resend = LbTimerClock();
 
     while (!have_received_all_packets(local_packet_num)) {
@@ -376,7 +379,7 @@ static void resend_missing_gameplay_packets_until_received(void *server_buf, siz
         }
         TbClockMSec now = LbTimerClock();
         if (now - last_resend >= GAMEPLAY_RESEND_INTERVAL_MS) {
-            resend_stored_gameplay_packets_to_peers();
+            resend_stored_gameplay_packets_to_peers(historical_turn);
             last_resend = now;
         }
         network_yield_waiting_gameplay_packets();
