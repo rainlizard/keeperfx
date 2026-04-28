@@ -42,6 +42,7 @@ struct BundledPacket {
 /******************************************************************************/
 void initialize_redundant_packets(void);
 size_t bundle_packets(PlayerNumber player, const struct Packet* current_packet, char* out_buffer);
+size_t bundle_stored_packets(PlayerNumber player, char* out_buffer);
 TbBool unbundle_packets(const char* bundled_buffer, size_t bundled_buffer_size, PlayerNumber source_player);
 
 /******************************************************************************/

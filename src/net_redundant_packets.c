@@ -95,6 +95,24 @@ size_t bundle_packets(PlayerNumber player, const struct Packet* current_packet, 
     return sizeof(bundled->valid_count) + bundled->valid_count * sizeof(struct Packet);
 }
 
+size_t bundle_stored_packets(PlayerNumber player, char* out_buffer)
+{
+    if (player < 0 || player >= MAX_N_USERS) {
+        return 0;
+    }
+    struct PacketHistory* history = &packet_history[player];
+    if (history->valid_count == 0) {
+        return 0;
+    }
+    struct BundledPacket* bundled = (struct BundledPacket*)out_buffer;
+    bundled->valid_count = history->valid_count;
+    for (unsigned char i = 0; i < bundled->valid_count; i += 1) {
+        int32_t history_index = (history->write_index + HISTORY_SIZE - i - 1) % HISTORY_SIZE;
+        bundled->packets[i] = history->packets[history_index];
+    }
+    return sizeof(bundled->valid_count) + bundled->valid_count * sizeof(struct Packet);
+}
+
 TbBool unbundle_packets(const char* bundled_buffer, size_t bundled_buffer_size, PlayerNumber source_player)
 {
     if (source_player < 0 || source_player >= MAX_N_USERS || bundled_buffer_size < sizeof(unsigned char)) {
