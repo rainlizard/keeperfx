@@ -4,7 +4,7 @@
 #include "bflib_basics.h"
 #include "globals.h"
 
-#define MAXIMUM_INPUT_LAG_TURNS    40
+#define MAXIMUM_INPUT_LAG_TURNS    12
 
 struct Packet;
 

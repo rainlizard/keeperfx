@@ -4,7 +4,7 @@
 /** @file redundant_packets.c
  *     Redundant packet bundling for network game packet loss prevention.
  * @par Purpose:
- *     Bundles current packet with previous 2 packets to prevent packet loss.
+ *     Bundles current packet with recent packet history to prevent packet loss.
  * @par Comment:
  *     None.
  * @author   KeeperFX Team
@@ -21,6 +21,7 @@
 #include "packets.h"
 #include "net_received_packets.h"
 #include "bflib_network.h"
+#include "game_legacy.h"
 #include <string.h>
 #include "post_inc.h"
 
@@ -29,7 +30,7 @@ extern "C" {
 #endif
 /******************************************************************************/
 
-#define HISTORY_SIZE 2
+#define HISTORY_SIZE REDUNDANT_PACKET_MAX_COUNT
 
 struct PacketHistory {
     struct Packet packets[HISTORY_SIZE];
@@ -41,64 +42,79 @@ static struct PacketHistory packet_history[MAX_N_USERS];
 
 /******************************************************************************/
 
-void initialize_redundant_packets(void) {
+void initialize_redundant_packets(void)
+{
     memset(packet_history, 0, sizeof(packet_history));
 }
 
-void clear_redundant_packets(void) {
-    memset(packet_history, 0, sizeof(packet_history));
-}
-
-void store_sent_packet(PlayerNumber player, const struct Packet* packet) {
+static void store_packet_in_history(PlayerNumber player, const struct Packet* packet)
+{
     if (player < 0 || player >= MAX_N_USERS) {
         return;
     }
     struct PacketHistory* history = &packet_history[player];
-    memcpy(&history->packets[history->write_index], packet, sizeof(struct Packet));
+    for (unsigned char i = 0; i < history->valid_count; i += 1) {
+        if (history->packets[i].turn == packet->turn) {
+            history->packets[i] = *packet;
+            return;
+        }
+    }
+    history->packets[history->write_index] = *packet;
     history->write_index = (history->write_index + 1) % HISTORY_SIZE;
     if (history->valid_count < HISTORY_SIZE) {
         history->valid_count += 1;
     }
 }
 
-size_t bundle_packets(PlayerNumber player, const struct Packet* current_packet, char* out_buffer) {
+size_t bundle_packets(PlayerNumber player, const struct Packet* current_packet, char* out_buffer)
+{
     if (player < 0 || player >= MAX_N_USERS) {
         return 0;
     }
     struct PacketHistory* history = &packet_history[player];
-    struct BundledPacket bundled;
-    bundled.valid_count = 1;
-    memcpy(&bundled.packets[0], current_packet, sizeof(struct Packet));
-    if (history->valid_count >= 1) {
-        int prev_index = (history->write_index - 1 + HISTORY_SIZE) % HISTORY_SIZE;
-        memcpy(&bundled.packets[1], &history->packets[prev_index], sizeof(struct Packet));
-        bundled.valid_count += 1;
+    struct BundledPacket* bundled = (struct BundledPacket*)out_buffer;
+    int32_t bundle_count = game.input_lag_turns + 1;
+    if (bundle_count < 1) {
+        bundle_count = 1;
     }
-    if (history->valid_count >= 2) {
-        int prev_prev_index = (history->write_index - 2 + HISTORY_SIZE) % HISTORY_SIZE;
-        memcpy(&bundled.packets[2], &history->packets[prev_prev_index], sizeof(struct Packet));
-        bundled.valid_count += 1;
+    if (bundle_count > REDUNDANT_PACKET_MAX_COUNT) {
+        bundle_count = REDUNDANT_PACKET_MAX_COUNT;
     }
-    memcpy(out_buffer, &bundled, sizeof(struct BundledPacket));
-    return sizeof(struct BundledPacket);
+    bundled->packets[0] = *current_packet;
+    unsigned char copied_count = 0;
+    for (unsigned char i = 0; i < history->valid_count && copied_count + 1 < bundle_count; i += 1) {
+        int32_t history_index = (history->write_index + HISTORY_SIZE - i - 1) % HISTORY_SIZE;
+        if (history->packets[history_index].turn == current_packet->turn) {
+            continue;
+        }
+        bundled->packets[copied_count + 1] = history->packets[history_index];
+        copied_count += 1;
+    }
+    bundled->valid_count = copied_count + 1;
+    store_packet_in_history(player, current_packet);
+    return sizeof(bundled->valid_count) + bundled->valid_count * sizeof(struct Packet);
 }
 
-void unbundle_packets(const char* bundled_buffer, PlayerNumber source_player) {
-    if (source_player < 0 || source_player >= MAX_N_USERS) {
-        return;
+TbBool unbundle_packets(const char* bundled_buffer, size_t bundled_buffer_size, PlayerNumber source_player)
+{
+    if (source_player < 0 || source_player >= MAX_N_USERS || bundled_buffer_size < sizeof(unsigned char)) {
+        return false;
     }
-    struct BundledPacket bundled;
-    memcpy(&bundled, bundled_buffer, sizeof(struct BundledPacket));
-    if (bundled.valid_count > REDUNDANT_PACKET_COUNT) {
-        return;
+    const struct BundledPacket* bundled = (const struct BundledPacket*)bundled_buffer;
+    if (bundled->valid_count < 1 || bundled->valid_count > REDUNDANT_PACKET_MAX_COUNT) {
+        return false;
     }
-    int i;
-    for (i = 0; i < bundled.valid_count; i += 1) {
-        const struct Packet* packet = &bundled.packets[i];
+    if (bundled_buffer_size < sizeof(bundled->valid_count) + bundled->valid_count * sizeof(struct Packet)) {
+        return false;
+    }
+    for (unsigned char i = 0; i < bundled->valid_count; i += 1) {
+        const struct Packet* packet = &bundled->packets[i];
+        store_packet_in_history(source_player, packet);
         if (!have_received_packet_from_player(packet->turn, source_player)) {
             store_received_packet(packet->turn, source_player, packet);
         }
     }
+    return true;
 }
 
 /******************************************************************************/

@@ -21,6 +21,7 @@
 
 #include "globals.h"
 #include "bflib_basics.h"
+#include "net_input_lag.h"
 #include "packets.h"
 
 #ifdef __cplusplus
@@ -30,20 +31,18 @@ extern "C" {
 /******************************************************************************/
 #pragma pack(1)
 
-#define REDUNDANT_PACKET_COUNT 3
+#define REDUNDANT_PACKET_MAX_COUNT (MAXIMUM_INPUT_LAG_TURNS + 1)
 
 struct BundledPacket {
     unsigned char valid_count;
-    struct Packet packets[REDUNDANT_PACKET_COUNT];
+    struct Packet packets[REDUNDANT_PACKET_MAX_COUNT];
 };
 
 #pragma pack()
 /******************************************************************************/
 void initialize_redundant_packets(void);
-void clear_redundant_packets(void);
-void store_sent_packet(PlayerNumber player, const struct Packet* packet);
 size_t bundle_packets(PlayerNumber player, const struct Packet* current_packet, char* out_buffer);
-void unbundle_packets(const char* bundled_buffer, PlayerNumber source_player);
+TbBool unbundle_packets(const char* bundled_buffer, size_t bundled_buffer_size, PlayerNumber source_player);
 
 /******************************************************************************/
 #ifdef __cplusplus
