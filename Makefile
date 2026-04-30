@@ -281,7 +281,6 @@ obj/map_utils.o \
 obj/moonphase.o \
 obj/net_game.o \
 obj/net_input_lag.o \
-obj/net_packet_history.o \
 obj/net_checksums.o \
 obj/net_matchmaking.o \
 obj/net_lan.o \
@@ -666,7 +665,7 @@ deps/centitoml/toml_api.c: deps/centijson/include/json.h
 deps/centitoml/toml_conv.c: deps/centijson/include/json.h
 src/bflib_fmvids.cpp: deps/ffmpeg/libavformat/avformat.h
 src/bflib_sndlib.cpp: deps/openal/include/AL/al.h
-src/net_packet_history.c: deps/zlib/include/zlib.h
+src/bflib_network_exchange.cpp: deps/zlib/include/zlib.h
 src/net_resync.cpp: deps/zlib/include/zlib.h
 src/console_cmd.c: deps/luajit/include/lua.h
 src/net_portforward.cpp: deps/miniupnpc/include/miniupnpc/miniupnpc.h deps/libnatpmp/include/natpmp/natpmp.h

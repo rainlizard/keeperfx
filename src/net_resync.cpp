@@ -31,7 +31,6 @@
 #include "lens_api.h"
 #include "lua_base.h"
 #include "net_input_lag.h"
-#include "net_packet_history.h"
 #include "net_checksums.h"
 #include "post_inc.h"
 
