@@ -88,7 +88,6 @@ static struct PacketHistory packet_history[MAX_N_USERS];
 
 static TbBool have_received_player_packet(GameTurn turn, PlayerNumber player);
 static size_t build_packet_bundle(PlayerNumber player, const struct Packet* current_packet, char* out_buffer);
-static TbBool read_packet_bundle(const char* packet_bundle_buffer, size_t packet_bundle_buffer_size, PlayerNumber source_player, void* out_packet, size_t packet_size);
 static TbBool receive_packet_history(NetUserId source, TbBool from_server, const char* buffer, size_t msg_size, void* server_buf, size_t frame_size);
 
 char* InitMessageBuffer(enum NetMessageType msg_type)
@@ -119,6 +118,23 @@ static TbBool valid_history_player(PlayerNumber player)
 static size_t packet_list_size(unsigned char valid_count)
 {
     return sizeof(unsigned char) + valid_count * sizeof(struct Packet);
+}
+
+static TbBool read_message_string(char** ptr, size_t max_len, TbBool allow_empty, const char** text)
+{
+    size_t max_read = sizeof(netstate.msg_buffer) - (*ptr - netstate.msg_buffer);
+    size_t len = strnlen(*ptr, max_read);
+    if (len >= max_read || len > max_len || (!allow_empty && len == 0)) {
+        return false;
+    }
+    *text = *ptr;
+    *ptr += len + 1;
+    return true;
+}
+
+static TbBool is_frame_message(enum NetMessageType type)
+{
+    return type == NETMSG_FRONTEND || type == NETMSG_STARTUP_SYNC || type == NETMSG_GAMEPLAY_UNSEQUENCED;
 }
 
 static void store_received_packet(GameTurn turn, PlayerNumber player, const struct Packet* packet)
@@ -186,8 +202,12 @@ static size_t write_packet_history(PlayerNumber player, char* out_buffer)
     return packet_list_size(packet_bundle->valid_count);
 }
 
-static TbBool store_packet_bundle(const char* packet_bundle_buffer, size_t packet_bundle_buffer_size, PlayerNumber source_player)
+static TbBool read_packet_bundle(const char* packet_bundle_buffer, size_t packet_bundle_buffer_size, PlayerNumber source_player, void* out_packet, size_t packet_size)
 {
+    if (packet_size != sizeof(struct Packet)) {
+        WARNLOG("Gameplay packet bundle size mismatch (%u != %u)", (unsigned)packet_size, (unsigned)sizeof(struct Packet));
+        return false;
+    }
     if (!valid_history_player(source_player) || packet_bundle_buffer_size < sizeof(unsigned char)) {
         return false;
     }
@@ -205,6 +225,7 @@ static TbBool store_packet_bundle(const char* packet_bundle_buffer, size_t packe
             store_received_packet(packet->turn, source_player, packet);
         }
     }
+    memcpy(out_packet, &packet_bundle->packets[0], packet_size);
     return true;
 }
 
@@ -406,32 +427,28 @@ TbError ProcessMessage(NetUserId source, void* server_buf, size_t frame_size)
             NETMSG("Peer was not in connected state");
             return Lb_OK;
         }
-        size_t max_read = sizeof(netstate.msg_buffer) - (ptr - netstate.msg_buffer);
-        size_t password_len = strnlen(ptr, max_read);
-        if (password_len >= max_read || password_len > sizeof(netstate.password)) {
+        const char* password;
+        if (!read_message_string(&ptr, sizeof(netstate.password), true, &password)) {
             NETDBG(6, "Connected peer sent invalid password");
             netstate.sp->drop_user(source);
             return Lb_OK;
         }
-        if (netstate.password[0] != 0 && strncmp(ptr, netstate.password, sizeof(netstate.password)) != 0) {
+        if (netstate.password[0] != 0 && strncmp(password, netstate.password, sizeof(netstate.password)) != 0) {
             NETMSG("Peer chose wrong password");
             return Lb_OK;
         }
-        ptr += password_len + 1;
-        max_read = sizeof(netstate.msg_buffer) - (ptr - netstate.msg_buffer);
-        size_t name_len = strnlen(ptr, max_read);
-        if (name_len == 0 || name_len >= max_read || name_len >= sizeof(netstate.users[source].name)) {
+        const char* name;
+        if (!read_message_string(&ptr, sizeof(netstate.users[source].name) - 1, false, &name)) {
             NETDBG(6, "Connected peer sent invalid name");
             netstate.sp->drop_user(source);
             return Lb_OK;
         }
-        snprintf(netstate.users[source].name, sizeof(netstate.users[source].name), "%s", ptr);
+        snprintf(netstate.users[source].name, sizeof(netstate.users[source].name), "%s", name);
         if (!isalnum(netstate.users[source].name[0])) {
             NETDBG(6, "Connected peer had bad name starting with %c", netstate.users[source].name[0]);
             netstate.sp->drop_user(source);
             return Lb_OK;
         }
-        ptr += name_len + 1;
         netstate.users[source].version = *(const struct GameVersionPacket *)ptr;
         NETMSG("User %s successfully logged in", netstate.users[source].name);
         netstate.users[source].progress = USER_LOGGEDIN;
@@ -468,15 +485,16 @@ TbError ProcessMessage(NetUserId source, void* server_buf, size_t frame_size)
         ptr += 1;
         netstate.users[id].progress = (enum NetUserProgress)*ptr;
         ptr += 1;
-        if (strnlen(ptr, sizeof(netstate.msg_buffer) - (ptr - netstate.msg_buffer)) >= sizeof(netstate.msg_buffer) - (ptr - netstate.msg_buffer)) {
+        const char* name;
+        if (!read_message_string(&ptr, sizeof(netstate.msg_buffer), true, &name)) {
             ERRORLOG("Critical error: Unterminated name in USERUPDATE");
             abort();
         }
-        snprintf(netstate.users[id].name, sizeof(netstate.users[id].name), "%s", ptr);
+        snprintf(netstate.users[id].name, sizeof(netstate.users[id].name), "%s", name);
         UpdateLocalPlayerInfo(id);
         return Lb_OK;
     }
-    if (type == NETMSG_FRONTEND || type == NETMSG_STARTUP_SYNC || type == NETMSG_GAMEPLAY_UNSEQUENCED) {
+    if (is_frame_message(type)) {
         NetUserId peer_id = (NetUserId)*ptr;
         if (peer_id < 0 || peer_id >= netstate.max_players) {
             ERRORLOG("Critical error: Out of range peer ID %i received, could be used for buffer overflow attack", peer_id);
@@ -525,13 +543,12 @@ TbError ProcessMessage(NetUserId source, void* server_buf, size_t frame_size)
     if (type == NETMSG_CHATMESSAGE) {
         int player_id = (int)*ptr;
         ptr += 1;
-        size_t max_read = sizeof(netstate.msg_buffer) - (ptr - netstate.msg_buffer);
-        size_t msg_len = strnlen(ptr, max_read);
-        if (msg_len >= max_read) {
+        const char* message;
+        if (!read_message_string(&ptr, sizeof(netstate.msg_buffer), true, &message)) {
             ERRORLOG("Chat message too long or not null-terminated");
             return Lb_OK;
         }
-        process_chat_message_end(player_id, ptr);
+        process_chat_message_end(player_id, message);
         if (netstate.my_id == SERVER_ID && source != SERVER_ID) {
             send_to_active_peers(netstate.my_id, source, netstate.msg_buffer, msg_size, false);
         }
@@ -570,20 +587,15 @@ const struct Packet* get_received_turn_packets(GameTurn turn)
     return packets_for_turn;
 }
 
-const struct Packet* get_received_player_packet(GameTurn turn, PlayerNumber player)
+static TbBool have_received_player_packet(GameTurn turn, PlayerNumber player)
 {
     for (int i = 0; i < PACKET_HISTORY_SIZE * PACKETS_COUNT; i += 1) {
         const struct ReceivedPacketEntry* entry = &received_history.entries[i];
         if (entry->valid && entry->turn == turn && entry->player == player) {
-            return &entry->packet;
+            return true;
         }
     }
-    return NULL;
-}
-
-static TbBool have_received_player_packet(GameTurn turn, PlayerNumber player)
-{
-    return get_received_player_packet(turn, player) != NULL;
+    return false;
 }
 
 TbBool have_received_all_packets(PlayerNumber local_packet_num)
@@ -608,21 +620,6 @@ static size_t build_packet_bundle(PlayerNumber player, const struct Packet* curr
     packet_bundle->valid_count = 1 + copy_packet_history(&packet_bundle->packets[1], history, REDUNDANT_PACKET_BUNDLE - 1, current_packet);
     store_packet_history(player, current_packet);
     return packet_list_size(packet_bundle->valid_count);
-}
-
-static TbBool read_packet_bundle(const char* packet_bundle_buffer, size_t packet_bundle_buffer_size, PlayerNumber source_player, void* out_packet, size_t packet_size)
-{
-    if (packet_size != sizeof(struct Packet)) {
-        WARNLOG("Gameplay packet bundle size mismatch (%u != %u)", (unsigned)packet_size, (unsigned)sizeof(struct Packet));
-        return false;
-    }
-    if (!store_packet_bundle(packet_bundle_buffer, packet_bundle_buffer_size, source_player)) {
-        return false;
-    }
-
-    const struct RedundantPacketBundle* packet_bundle = (const struct RedundantPacketBundle*)packet_bundle_buffer;
-    memcpy(out_packet, &packet_bundle->packets[0], packet_size);
-    return true;
 }
 
 void sync_packet_history(void)
