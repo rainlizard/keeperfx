@@ -47,7 +47,6 @@ extern "C" {
 #endif
 /******************************************************************************/
 
-#define SEND_DUPLICATE_PACKETS 3
 #define PACKET_HISTORY_SIZE 32
 #define PROACTIVE_HISTORY_SEND_MS 2000
 #define REDUNDANT_PACKET_BUNDLE 2
@@ -87,21 +86,6 @@ static struct {
 static struct PlayerPacketHistory player_packet_history[MAX_N_USERS];
 
 static TbBool has_received_player_packet(GameTurn turn, PlayerNumber player);
-
-char* begin_net_message(enum NetMessageType msg_type)
-{
-    char* write_pos = netstate.msg_buffer;
-    *write_pos = msg_type;
-    return write_pos + 1;
-}
-
-// Clients send directly only to the host; the host relays frames to everyone else.
-static TbBool can_send_to_peer(NetUserId peer_id)
-{
-    return (peer_id != netstate.my_id) &&
-        (netstate.users[peer_id].progress != USER_UNUSED) &&
-        (my_player_number == get_host_player_id() || peer_id == SERVER_ID);
-}
 
 static TbBool is_history_player_valid(PlayerNumber player)
 {
@@ -222,45 +206,6 @@ static TbBool unpack_history_bundle(const char* packet_bundle_buffer, size_t pac
     }
     memcpy(out_packet, &packet_bundle->packets[0], packet_size);
     return true;
-}
-
-void send_message_buffer(NetUserId dest, const char* end_ptr)
-{
-    size_t message_size = end_ptr - netstate.msg_buffer;
-    netstate.sp->sendmsg_single(dest, netstate.msg_buffer, message_size);
-}
-
-static void send_network_message(NetUserId destination, const char* buffer, size_t msg_size, TbBool unsequenced)
-{
-    if (!unsequenced) {
-        netstate.sp->sendmsg_single(destination, buffer, msg_size);
-        return;
-    }
-
-    for (int i = 0; i < SEND_DUPLICATE_PACKETS; i += 1) {
-        netstate.sp->sendmsg_single_unsequenced(destination, buffer, msg_size);
-    }
-}
-
-static void send_to_active_peers(NetUserId first_skip_id, NetUserId second_skip_id, const char* buffer, size_t msg_size, TbBool unsequenced)
-{
-    for (NetUserId id = 0; id < netstate.max_players; id += 1) {
-        if (id == first_skip_id || id == second_skip_id || !IsUserActive(id)) {
-            continue;
-        }
-        send_network_message(id, buffer, msg_size, unsequenced);
-    }
-}
-
-static void send_to_host_or_peers(size_t msg_size)
-{
-    if (netstate.my_id != SERVER_ID) {
-        if (IsUserActive(SERVER_ID)) {
-            netstate.sp->sendmsg_single(SERVER_ID, netstate.msg_buffer, msg_size);
-        }
-        return;
-    }
-    send_to_active_peers(netstate.my_id, INVALID_USER_ID, netstate.msg_buffer, msg_size, false);
 }
 
 static TbError exchange_frame_message(void *send_buf, void *server_buf, size_t client_frame_size, enum NetMessageType msg_type)
@@ -803,23 +748,6 @@ TbError LbNetwork_ExchangeWithWait(enum NetMessageType msg_type, void *send_buf,
     }
     netstate.seq_nbr += 1;
     return Lb_OK;
-}
-
-void LbNetwork_SendChatMessageImmediate(int player_id, const char *message)
-{
-    char* write_pos = begin_net_message(NETMSG_CHATMESSAGE);
-    *write_pos = player_id;
-    write_pos += 1;
-    strcpy(write_pos, message);
-    write_pos += strlen(message) + 1;
-    send_to_host_or_peers(write_pos - netstate.msg_buffer);
-}
-
-void LbNetwork_BroadcastUnpauseTimesync(void)
-{
-    MULTIPLAYER_LOG("LbNetwork_BroadcastUnpauseTimesync");
-    begin_net_message(NETMSG_UNPAUSE);
-    send_to_host_or_peers(1);
 }
 
 /******************************************************************************/

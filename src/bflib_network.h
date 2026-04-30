@@ -259,6 +259,8 @@ TbError LbNetwork_EnableNewPlayers(TbBool allow);
 TbError LbNetwork_EnumeratePlayers(struct TbNetworkSessionNameEntry *sesn, TbNetworkCallbackFunc callback, void *user_data);
 TbError LbNetwork_EnumerateSessions(TbNetworkCallbackFunc callback, void *ptr);
 TbError LbNetwork_Stop(void);
+void    LbNetwork_SendChatMessageImmediate(int player_id, const char *message);
+void    LbNetwork_BroadcastUnpauseTimesync(void);
 void    LbNetwork_UpdateInputLagIfHost(void);
 /******************************************************************************/
 #ifdef __cplusplus

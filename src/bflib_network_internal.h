@@ -87,9 +87,14 @@ TbBool OnNewUser(NetUserId *assigned_id);
 void OnDroppedUser(NetUserId id, enum NetDropReason reason);
 TbBool IsUserActive(NetUserId id);
 void UpdateLocalPlayerInfo(NetUserId id);
+TbBool can_send_to_peer(NetUserId peer_id);
 char* begin_net_message(enum NetMessageType msg_type);
 void send_message_buffer(NetUserId dest, const char* end_ptr);
+void send_network_message(NetUserId destination, const char* buffer, size_t msg_size, TbBool unsequenced);
+void send_to_active_peers(NetUserId first_skip_id, NetUserId second_skip_id, const char* buffer, size_t msg_size, TbBool unsequenced);
+void send_host_or_peers(size_t msg_size);
 void SendUserUpdate(NetUserId dest, NetUserId updated_user);
+TbError LbNetwork_ExchangeLogin(char *player_name);
 
 #ifdef __cplusplus
 }

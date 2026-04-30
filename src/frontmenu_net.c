@@ -42,7 +42,7 @@
 #include "keeperfx.hpp"
 #include "custom_sprites.h"
 #include "bflib_enet.h"
-#include "bflib_network_exchange.h"
+#include "bflib_network.h"
 #include "packets.h"
 #include "post_inc.h"
 
