@@ -68,14 +68,14 @@ void UpdateLocalPlayerInfo(NetUserId id) {
 }
 
 void SendUserUpdate(NetUserId dest, NetUserId updated_user) {
-    char *msg_pos = begin_message(NETMSG_USERUPDATE);
-    *msg_pos = updated_user;
-    msg_pos += 1;
-    *msg_pos = netstate.users[updated_user].progress;
-    msg_pos += 1;
-    strcpy(msg_pos, netstate.users[updated_user].name);
-    msg_pos += strlen(netstate.users[updated_user].name) + 1;
-    send_buffered_message(dest, msg_pos);
+    char *write_pos = begin_net_message(NETMSG_USERUPDATE);
+    *write_pos = updated_user;
+    write_pos += 1;
+    *write_pos = netstate.users[updated_user].progress;
+    write_pos += 1;
+    strcpy(write_pos, netstate.users[updated_user].name);
+    write_pos += strlen(netstate.users[updated_user].name) + 1;
+    send_message_buffer(dest, write_pos);
 }
 
 void LbNetwork_SetServerPort(int port) {

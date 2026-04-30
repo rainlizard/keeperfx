@@ -87,8 +87,8 @@ TbBool OnNewUser(NetUserId *assigned_id);
 void OnDroppedUser(NetUserId id, enum NetDropReason reason);
 TbBool IsUserActive(NetUserId id);
 void UpdateLocalPlayerInfo(NetUserId id);
-char* begin_message(enum NetMessageType msg_type);
-void send_buffered_message(NetUserId dest, const char* end_ptr);
+char* begin_net_message(enum NetMessageType msg_type);
+void send_message_buffer(NetUserId dest, const char* end_ptr);
 void SendUserUpdate(NetUserId dest, NetUserId updated_user);
 
 #ifdef __cplusplus
