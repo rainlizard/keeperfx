@@ -50,6 +50,7 @@ extern "C" {
 #define PACKET_HISTORY_SIZE 32
 #define PROACTIVE_HISTORY_SEND_MS 2000
 #define REDUNDANT_PACKET_BUNDLE 2
+#define SEND_DUPLICATE_PACKETS 3
 
 struct ReceivedPacketEntry {
     GameTurn turn;
@@ -86,6 +87,14 @@ static struct {
 static struct PlayerPacketHistory player_packet_history[MAX_N_USERS];
 
 static TbBool has_received_player_packet(GameTurn turn, PlayerNumber player);
+
+// Clients send directly only to the host; the host relays frames to everyone else.
+static TbBool can_send_to_peer(NetUserId peer_id)
+{
+    return (peer_id != netstate.my_id) &&
+        (netstate.users[peer_id].progress != USER_UNUSED) &&
+        (my_player_number == get_host_player_id() || peer_id == SERVER_ID);
+}
 
 static TbBool is_history_player_valid(PlayerNumber player)
 {
@@ -206,6 +215,28 @@ static TbBool unpack_history_bundle(const char* packet_bundle_buffer, size_t pac
     }
     memcpy(out_packet, &packet_bundle->packets[0], packet_size);
     return true;
+}
+
+static void send_network_message(NetUserId destination, const char* buffer, size_t msg_size, TbBool unsequenced)
+{
+    if (!unsequenced) {
+        netstate.sp->sendmsg_single(destination, buffer, msg_size);
+        return;
+    }
+
+    for (int i = 0; i < SEND_DUPLICATE_PACKETS; i += 1) {
+        netstate.sp->sendmsg_single_unsequenced(destination, buffer, msg_size);
+    }
+}
+
+static void send_to_active_peers(NetUserId first_skip_id, NetUserId second_skip_id, const char* buffer, size_t msg_size, TbBool unsequenced)
+{
+    for (NetUserId id = 0; id < netstate.max_players; id += 1) {
+        if (id == first_skip_id || id == second_skip_id || !IsUserActive(id)) {
+            continue;
+        }
+        send_network_message(id, buffer, msg_size, unsequenced);
+    }
 }
 
 static TbError exchange_frame_message(void *send_buf, void *server_buf, size_t client_frame_size, enum NetMessageType msg_type)

@@ -50,7 +50,6 @@ extern "C" {
 struct TbNetworkPlayerInfo *localPlayerInfoPtr;
 static int ServerPort = 0;
 #define SESSION_COUNT 32
-#define SEND_DUPLICATE_PACKETS 3
 struct NetState netstate;
 static struct TbNetworkSessionNameEntry sessions[SESSION_COUNT];
 
@@ -74,42 +73,13 @@ char* begin_net_message(enum NetMessageType msg_type)
     return write_pos + 1;
 }
 
-TbBool can_send_to_peer(NetUserId peer_id)
-{
-    return (peer_id != netstate.my_id) &&
-        (netstate.users[peer_id].progress != USER_UNUSED) &&
-        (my_player_number == get_host_player_id() || peer_id == SERVER_ID);
-}
-
 void send_message_buffer(NetUserId dest, const char *end_ptr)
 {
     size_t message_size = end_ptr - netstate.msg_buffer;
     netstate.sp->sendmsg_single(dest, netstate.msg_buffer, message_size);
 }
 
-void send_network_message(NetUserId destination, const char *buffer, size_t msg_size, TbBool unsequenced)
-{
-    if (!unsequenced) {
-        netstate.sp->sendmsg_single(destination, buffer, msg_size);
-        return;
-    }
-
-    for (int i = 0; i < SEND_DUPLICATE_PACKETS; i += 1) {
-        netstate.sp->sendmsg_single_unsequenced(destination, buffer, msg_size);
-    }
-}
-
-void send_to_active_peers(NetUserId first_skip_id, NetUserId second_skip_id, const char *buffer, size_t msg_size, TbBool unsequenced)
-{
-    for (NetUserId id = 0; id < netstate.max_players; id += 1) {
-        if (id == first_skip_id || id == second_skip_id || !IsUserActive(id)) {
-            continue;
-        }
-        send_network_message(id, buffer, msg_size, unsequenced);
-    }
-}
-
-void send_host_or_peers(size_t msg_size)
+static void send_host_or_peers(size_t msg_size)
 {
     if (netstate.my_id != SERVER_ID) {
         if (IsUserActive(SERVER_ID)) {
@@ -117,7 +87,12 @@ void send_host_or_peers(size_t msg_size)
         }
         return;
     }
-    send_to_active_peers(netstate.my_id, INVALID_USER_ID, netstate.msg_buffer, msg_size, false);
+    for (NetUserId id = 0; id < netstate.max_players; id += 1) {
+        if (id == netstate.my_id || !IsUserActive(id)) {
+            continue;
+        }
+        netstate.sp->sendmsg_single(id, netstate.msg_buffer, msg_size);
+    }
 }
 
 void SendUserUpdate(NetUserId dest, NetUserId updated_user) {
