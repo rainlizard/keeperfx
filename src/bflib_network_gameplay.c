@@ -321,8 +321,8 @@ static void send_packet_history(void)
             uLong data_crc = crc32(0L, Z_NULL, 0);
             data_crc = crc32(data_crc, (const Bytef *)packet_history_buffer, packet_history_size);
             uLongf compressed_size = compressBound(packet_history_size);
-            size_t message_size = sizeof(unsigned char) + sizeof(struct PacketHistoryHeader) + compressed_size;
-            char *message_buffer = (char *)malloc(message_size);
+            size_t max_message_size = sizeof(unsigned char) + sizeof(struct PacketHistoryHeader) + compressed_size;
+            char *message_buffer = (char *)malloc(max_message_size);
             if (message_buffer == NULL) {
                 ERRORLOG("Failed to allocate gameplay packet history message buffer");
                 continue;
@@ -335,6 +335,7 @@ static void send_packet_history(void)
                 continue;
             }
             struct PacketHistoryHeader header = { (PlayerNumber)player, (unsigned int)compressed_size, (unsigned int)packet_history_size, (unsigned int)data_crc };
+            size_t message_size = sizeof(unsigned char) + sizeof(struct PacketHistoryHeader) + compressed_size;
             message_buffer[0] = NETMSG_GAMEPLAY_PACKET_HISTORY;
             memcpy(message_buffer + sizeof(unsigned char), &header, sizeof(header));
             MULTIPLAYER_LOG("Sending reliable compressed gameplay packet history for player=%d to peer=%d (%lu -> %lu bytes)",
