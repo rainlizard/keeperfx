@@ -37,6 +37,7 @@ extern void network_yield_waiting_gameplay_packets(void);
 
 #define PACKET_HISTORY_SIZE 20
 #define WAITING_HISTORY_SEND_MS 50
+#define WAITING_HISTORY_COOLDOWN_MS 2500
 #define REDUNDANT_PACKET_BUNDLE 2
 
 struct ReceivedPacketEntry {
@@ -280,16 +281,17 @@ static TbBool have_all_turn_packets(PlayerNumber local_packet_player)
     return true;
 }
 
-static TbBool history_send_due(TbClockMSec wait_start_time, TbClockMSec *last_send_time)
+static TbBool history_send_due(TbClockMSec wait_start_time, TbClockMSec *last_send_time, TbBool *history_sent)
 {
     TbClockMSec current_time = LbTimerClock();
-    if (current_time - wait_start_time <= WAITING_HISTORY_SEND_MS) {
+    if (current_time - wait_start_time < WAITING_HISTORY_SEND_MS) {
         return false;
     }
-    if (current_time - *last_send_time < WAITING_HISTORY_SEND_MS) {
+    if (*history_sent && current_time - *last_send_time < WAITING_HISTORY_COOLDOWN_MS) {
         return false;
     }
     *last_send_time = current_time;
+    *history_sent = true;
     return true;
 }
 
@@ -364,7 +366,8 @@ TbError LbNetwork_ExchangeGameplay(void *send_buf, void *server_buf, size_t fram
             if (!have_all_turn_packets(local_packet_player)) {
                 GameTurn expected_turn = get_gameturn() - game.input_lag_turns;
                 TbClockMSec wait_start_time = LbTimerClock();
-                TbClockMSec last_history_send = wait_start_time;
+                TbClockMSec last_history_send = 0;
+                TbBool history_sent = false;
                 MULTIPLAYER_LOG("LbNetwork_ExchangeGameplay: Missing packets for turn=%lu, collecting...", (unsigned long)expected_turn);
 
                 while (!have_all_turn_packets(local_packet_player)) {
@@ -398,7 +401,7 @@ TbError LbNetwork_ExchangeGameplay(void *send_buf, void *server_buf, size_t fram
                         MULTIPLAYER_LOG("LbNetwork_ExchangeGameplay: Missing packets remained for turn=%lu after collection", (unsigned long)expected_turn);
                         break;
                     }
-                    if (history_send_due(wait_start_time, &last_history_send)) {
+                    if (history_send_due(wait_start_time, &last_history_send, &history_sent)) {
                         send_packet_history();
                     }
                     network_yield_waiting_gameplay_packets();
