@@ -119,7 +119,8 @@ obj/bflib_mspointer.o \
 obj/bflib_netsession.o \
 obj/bflib_netsp.o \
 obj/bflib_network.o \
-obj/bflib_network_exchange.o \
+obj/bflib_network_gameplay.o \
+obj/bflib_network_session.o \
 obj/net_resync.o \
 obj/bflib_planar.o \
 obj/bflib_render.o \
@@ -665,7 +666,7 @@ deps/centitoml/toml_api.c: deps/centijson/include/json.h
 deps/centitoml/toml_conv.c: deps/centijson/include/json.h
 src/bflib_fmvids.cpp: deps/ffmpeg/libavformat/avformat.h
 src/bflib_sndlib.cpp: deps/openal/include/AL/al.h
-src/bflib_network_exchange.cpp: deps/zlib/include/zlib.h
+src/bflib_network_gameplay.c: deps/zlib/include/zlib.h
 src/net_resync.cpp: deps/zlib/include/zlib.h
 src/console_cmd.c: deps/luajit/include/lua.h
 src/net_portforward.cpp: deps/miniupnpc/include/miniupnpc/miniupnpc.h deps/libnatpmp/include/natpmp/natpmp.h

@@ -2,7 +2,7 @@
 // Free implementation of Bullfrog's Dungeon Keeper strategy game.
 /******************************************************************************/
 /** @file bflib_network_exchange.h
- *     Header file for bflib_network_exchange.cpp.
+ *     Header file for network exchange modules.
  * @par Purpose:
  *     Network data exchange for Dungeon Keeper multiplayer.
  * @par Comment:
