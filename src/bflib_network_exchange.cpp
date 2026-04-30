@@ -113,6 +113,29 @@ static size_t packet_bundle_size(unsigned char valid_count)
     return sizeof(unsigned char) + valid_count * sizeof(struct Packet);
 }
 
+static TbBool read_msg_text(char** read_pos, const char** text, size_t max_len)
+{
+    size_t max_read = sizeof(netstate.msg_buffer) - (*read_pos - netstate.msg_buffer);
+    size_t len = strnlen(*read_pos, max_read);
+    if (len >= max_read || len > max_len) {
+        return false;
+    }
+    *text = *read_pos;
+    *read_pos += len + 1;
+    return true;
+}
+
+static TbBool host_started_level(const void* server_buf, size_t frame_size)
+{
+    if (frame_size != sizeof(struct ScreenPacket)) {
+        return false;
+    }
+    const struct ScreenPacket* host_packet = &((const struct ScreenPacket*)server_buf)[get_host_player_id()];
+    return ((host_packet->networkstatus_flags & NetStat_PlayerConnected) != 0)
+        && (screen_packet_action(host_packet) == NetAct_HostStartLevel)
+        && (host_packet->action_par1 > 0);
+}
+
 static void store_packet_history(PlayerNumber player, const struct Packet* packet)
 {
     if (!is_history_player_valid(player)) {
@@ -300,32 +323,20 @@ static TbError process_network_message(NetUserId source, void* server_buf, size_
             return Lb_OK;
         }
         const char* password;
-        {
-            size_t max_read = sizeof(netstate.msg_buffer) - (read_pos - netstate.msg_buffer);
-            size_t len = strnlen(read_pos, max_read);
-            if (len >= max_read || len > sizeof(netstate.password)) {
-                NETDBG(6, "Connected peer sent invalid password");
-                netstate.sp->drop_user(source);
-                return Lb_OK;
-            }
-            password = read_pos;
-            read_pos += len + 1;
+        if (!read_msg_text(&read_pos, &password, sizeof(netstate.password))) {
+            NETDBG(6, "Connected peer sent invalid password");
+            netstate.sp->drop_user(source);
+            return Lb_OK;
         }
         if (netstate.password[0] != 0 && strncmp(password, netstate.password, sizeof(netstate.password)) != 0) {
             NETMSG("Peer chose wrong password");
             return Lb_OK;
         }
         const char* name;
-        {
-            size_t max_read = sizeof(netstate.msg_buffer) - (read_pos - netstate.msg_buffer);
-            size_t len = strnlen(read_pos, max_read);
-            if (len >= max_read || len > sizeof(netstate.users[source].name) - 1 || len == 0) {
-                NETDBG(6, "Connected peer sent invalid name");
-                netstate.sp->drop_user(source);
-                return Lb_OK;
-            }
-            name = read_pos;
-            read_pos += len + 1;
+        if (!read_msg_text(&read_pos, &name, sizeof(netstate.users[source].name) - 1) || name[0] == '\0') {
+            NETDBG(6, "Connected peer sent invalid name");
+            netstate.sp->drop_user(source);
+            return Lb_OK;
         }
         snprintf(netstate.users[source].name, sizeof(netstate.users[source].name), "%s", name);
         if (!isalnum(netstate.users[source].name[0])) {
@@ -369,15 +380,9 @@ static TbError process_network_message(NetUserId source, void* server_buf, size_
         netstate.users[user_id].progress = (enum NetUserProgress)*read_pos;
         read_pos += 1;
         const char* name;
-        {
-            size_t max_read = sizeof(netstate.msg_buffer) - (read_pos - netstate.msg_buffer);
-            size_t len = strnlen(read_pos, max_read);
-            if (len >= max_read || len > sizeof(netstate.msg_buffer)) {
-                ERRORLOG("Critical error: Unterminated name in USERUPDATE");
-                abort();
-            }
-            name = read_pos;
-            read_pos += len + 1;
+        if (!read_msg_text(&read_pos, &name, sizeof(netstate.users[user_id].name) - 1)) {
+            ERRORLOG("Critical error: Unterminated name in USERUPDATE");
+            abort();
         }
         snprintf(netstate.users[user_id].name, sizeof(netstate.users[user_id].name), "%s", name);
         UpdateLocalPlayerInfo(user_id);
@@ -433,15 +438,9 @@ static TbError process_network_message(NetUserId source, void* server_buf, size_
         int player_id = (int)*read_pos;
         read_pos += 1;
         const char* message;
-        {
-            size_t max_read = sizeof(netstate.msg_buffer) - (read_pos - netstate.msg_buffer);
-            size_t len = strnlen(read_pos, max_read);
-            if (len >= max_read || len > sizeof(netstate.msg_buffer)) {
-                ERRORLOG("Chat message too long or not null-terminated");
-                return Lb_OK;
-            }
-            message = read_pos;
-            read_pos += len + 1;
+        if (!read_msg_text(&read_pos, &message, sizeof(netstate.msg_buffer) - 1)) {
+            ERRORLOG("Chat message too long or not null-terminated");
+            return Lb_OK;
         }
         process_chat_message_end(player_id, message);
         if (netstate.my_id == SERVER_ID && source != SERVER_ID) {
@@ -499,6 +498,43 @@ static TbError process_network_message(NetUserId source, void* server_buf, size_
         return Lb_OK;
     }
     return Lb_OK;
+}
+
+static void process_peer_msgs(NetUserId peer_id, void* server_buf, size_t frame_size)
+{
+    while (netstate.sp->msgready(peer_id, 0)) {
+        process_network_message(peer_id, server_buf, frame_size);
+    }
+}
+
+static void process_wait_msgs(NetUserId peer_id, void* server_buf, size_t frame_size, enum NetMessageType msg_type, TbBool* has_received_frame)
+{
+    while (netstate.sp->msgready(peer_id, 0)) {
+        process_network_message(peer_id, server_buf, frame_size);
+        if ((enum NetMessageType)netstate.msg_buffer[0] != msg_type) {
+            continue;
+        }
+        NetUserId frame_peer_id = (unsigned char)netstate.msg_buffer[1];
+        if (frame_peer_id < netstate.max_players) {
+            has_received_frame[frame_peer_id] = true;
+        }
+    }
+}
+
+static TbBool have_peer_frame(NetUserId peer_id, const TbBool* has_received_frame)
+{
+    if (my_player_number == get_host_player_id()) {
+        return has_received_frame[peer_id];
+    }
+    for (NetUserId id = 0; id < netstate.max_players; id += 1) {
+        if (id == netstate.my_id || !IsUserActive(id)) {
+            continue;
+        }
+        if (!has_received_frame[id]) {
+            return false;
+        }
+    }
+    return true;
 }
 
 void initialize_packet_history(void)
@@ -659,9 +695,7 @@ TbError LbNetwork_ExchangeGameplay(void *send_buf, void *server_buf, size_t clie
 
     for (NetUserId peer_id = 0; peer_id < netstate.max_players; peer_id += 1) {
         if (can_send_to_peer(peer_id)) {
-            while (netstate.sp->msgready(peer_id, 0)) {
-                process_network_message(peer_id, server_buf, client_frame_size);
-            }
+            process_peer_msgs(peer_id, server_buf, client_frame_size);
         }
     }
     send_packet_history();
@@ -689,9 +723,7 @@ TbError LbNetwork_ExchangeGameplay(void *send_buf, void *server_buf, size_t clie
                         if (netstate.my_id == SERVER_ID && has_received_player_packet(expected_turn, (PlayerNumber)peer_id)) {
                             continue;
                         }
-                        while (netstate.sp->msgready(peer_id, 0)) {
-                            process_network_message(peer_id, server_buf, client_frame_size);
-                        }
+                        process_peer_msgs(peer_id, server_buf, client_frame_size);
                         if (netstate.my_id != SERVER_ID && netstate.users[SERVER_ID].progress == USER_UNUSED) {
                             MULTIPLAYER_LOG("LbNetwork_ExchangeGameplay: Host disconnected while collecting turn=%lu", (unsigned long)expected_turn);
                             netstate.seq_nbr += 1;
@@ -731,11 +763,8 @@ TbError LbNetwork_ExchangeWithWait(enum NetMessageType msg_type, void *send_buf,
     }
 
     TbBool should_stop_waiting = false;
-    if (msg_type == NETMSG_FRONTEND && client_frame_size == sizeof(struct ScreenPacket)) {
-        const struct ScreenPacket* host_packet = &((const struct ScreenPacket*)server_buf)[get_host_player_id()];
-        should_stop_waiting = ((host_packet->networkstatus_flags & NetStat_PlayerConnected) != 0)
-            && (screen_packet_action(host_packet) == NetAct_HostStartLevel)
-            && (host_packet->action_par1 > 0);
+    if (msg_type == NETMSG_FRONTEND) {
+        should_stop_waiting = host_started_level(server_buf, client_frame_size);
     }
     TbBool has_received_frame[MAX_N_USERS] = {false};
     for (NetUserId peer_id = 0; peer_id < netstate.max_players; peer_id += 1) {
@@ -752,37 +781,13 @@ TbError LbNetwork_ExchangeWithWait(enum NetMessageType msg_type, void *send_buf,
 
             unsigned wait_ms = min(TIMEOUT_LOBBY_EXCHANGE - elapsed, (TbClockMSec)16);
             if (netstate.sp->msgready(peer_id, wait_ms)) {
-                while (netstate.sp->msgready(peer_id, 0)) {
-                    process_network_message(peer_id, server_buf, client_frame_size);
-                    if ((enum NetMessageType)netstate.msg_buffer[0] == msg_type) {
-                        NetUserId frame_peer_id = (unsigned char)netstate.msg_buffer[1];
-                        if (frame_peer_id < netstate.max_players) {
-                            has_received_frame[frame_peer_id] = true;
-                        }
-                    }
-                }
-                if (msg_type == NETMSG_FRONTEND && client_frame_size == sizeof(struct ScreenPacket)) {
-                    const struct ScreenPacket* host_packet = &((const struct ScreenPacket*)server_buf)[get_host_player_id()];
-                    should_stop_waiting = ((host_packet->networkstatus_flags & NetStat_PlayerConnected) != 0)
-                        && (screen_packet_action(host_packet) == NetAct_HostStartLevel)
-                        && (host_packet->action_par1 > 0);
+                process_wait_msgs(peer_id, server_buf, client_frame_size, msg_type, has_received_frame);
+                if (msg_type == NETMSG_FRONTEND) {
+                    should_stop_waiting = host_started_level(server_buf, client_frame_size);
                 }
             }
 
-            TbBool received_frame = has_received_frame[peer_id];
-            if (my_player_number != get_host_player_id()) {
-                received_frame = true;
-                for (NetUserId id = 0; id < netstate.max_players; id += 1) {
-                    if (id == netstate.my_id || !IsUserActive(id)) {
-                        continue;
-                    }
-                    if (!has_received_frame[id]) {
-                        received_frame = false;
-                        break;
-                    }
-                }
-            }
-            if (received_frame) {
+            if (have_peer_frame(peer_id, has_received_frame)) {
                 break;
             }
 
