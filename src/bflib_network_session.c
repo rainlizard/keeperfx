@@ -284,7 +284,11 @@ TbError process_network_message(NetUserId source, void *server_buf, size_t frame
     }
     if (message_type == NETMSG_GAMEPLAY_PACKET_HISTORY) {
         size_t payload_size = message_size - (read_pos - netstate.msg_buffer);
-        gameplay_read_history(source, read_pos, payload_size, server_buf, frame_size);
+        if (gameplay_read_history(source, read_pos, payload_size)) {
+            if (netstate.my_id == SERVER_ID && source != SERVER_ID) {
+                send_to_active_peers(netstate.my_id, source, netstate.msg_buffer, message_size, false);
+            }
+        }
         return Lb_OK;
     }
     return Lb_OK;

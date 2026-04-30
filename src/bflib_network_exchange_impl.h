@@ -36,7 +36,7 @@ void process_peer_msgs(NetUserId peer_id, void *server_buf, size_t frame_size);
 
 size_t gameplay_build_payload(PlayerNumber player, const struct Packet *first_packet, void *buffer);
 TbBool gameplay_unpack_payload(const char *buffer, size_t buffer_size, PlayerNumber player, void *out_packet, size_t packet_size);
-TbBool gameplay_read_history(NetUserId source, const char *buffer, size_t buffer_size, void *server_buf, size_t frame_size);
+TbBool gameplay_read_history(NetUserId source, const char *buffer, size_t buffer_size);
 
 #ifdef __cplusplus
 }
