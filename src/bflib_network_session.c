@@ -39,7 +39,7 @@ extern void network_yield_draw_frontend(void);
 
 /******************************************************************************/
 
-// 2 is never good enough
+// 2 is not good enough
 #define SEND_DUPLICATE_PACKETS 3
 
 static TbBool read_msg_text(char **read_pos, const char **text, size_t max_len)
