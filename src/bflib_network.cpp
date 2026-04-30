@@ -116,9 +116,9 @@ void LbNetwork_SendChatMessageImmediate(int player_id, const char *message)
     send_host_or_peers(write_pos - netstate.msg_buffer);
 }
 
-void LbNetwork_BroadcastUnpauseTimesync(void)
+void LbNetwork_BroadcastUnpause(void)
 {
-    MULTIPLAYER_LOG("LbNetwork_BroadcastUnpauseTimesync");
+    MULTIPLAYER_LOG("LbNetwork_BroadcastUnpause");
     begin_net_message(NETMSG_UNPAUSE);
     send_host_or_peers(1);
 }

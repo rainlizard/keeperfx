@@ -3552,7 +3552,6 @@ void keeper_gameplay_loop(void)
 
     initial_time_point();
     LbSleepExtInit();
-    LbNetwork_TimesyncBarrier();
 
     //the main gameplay loop starts
     while ((!quit_game) && (!exit_keeper))

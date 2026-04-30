@@ -251,14 +251,13 @@ TbError process_network_message(NetUserId source, void *server_buf, size_t frame
             MULTIPLAYER_LOG("ProcessMessage NETMSG_UNPAUSE: ignoring, not paused");
             return Lb_OK;
         }
-        MULTIPLAYER_LOG("ProcessMessage NETMSG_UNPAUSE: initiating timesync");
+        MULTIPLAYER_LOG("ProcessMessage NETMSG_UNPAUSE: applying unpause");
         unpausing_in_progress = 1;
         keeper_screen_redraw();
         LbScreenSwap();
         if (my_player_number == get_host_player_id()) {
-            LbNetwork_BroadcastUnpauseTimesync();
+            LbNetwork_BroadcastUnpause();
         }
-        LbNetwork_TimesyncBarrier();
         process_pause_packet(0, 0);
         unpausing_in_progress = 0;
         return Lb_OK;

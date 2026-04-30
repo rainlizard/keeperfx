@@ -63,10 +63,6 @@ enum NetMessageType {
     NETMSG_STARTUP_SYNC,
     NETMSG_GAMEPLAY_UNSEQUENCED,
     NETMSG_RESYNC_DATA,
-    NETMSG_RESYNC_RESUME,
-    NETMSG_TIMESYNC_REQUEST,
-    NETMSG_TIMESYNC_REPLY,
-    NETMSG_TIMESYNC_COMPLETE,
     NETMSG_UNPAUSE,
     NETMSG_CHATMESSAGE,
     NETMSG_GAMEPLAY_PACKET_HISTORY,
@@ -260,7 +256,7 @@ TbError LbNetwork_EnumeratePlayers(struct TbNetworkSessionNameEntry *sesn, TbNet
 TbError LbNetwork_EnumerateSessions(TbNetworkCallbackFunc callback, void *ptr);
 TbError LbNetwork_Stop(void);
 void    LbNetwork_SendChatMessageImmediate(int player_id, const char *message);
-void    LbNetwork_BroadcastUnpauseTimesync(void);
+void    LbNetwork_BroadcastUnpause(void);
 void    LbNetwork_UpdateInputLagIfHost(void);
 /******************************************************************************/
 #ifdef __cplusplus
