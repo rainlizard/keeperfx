@@ -37,9 +37,6 @@
 #include "post_inc.h"
 
 #ifdef __cplusplus
-#endif
-
-#ifdef __cplusplus
 extern "C" {
 #endif
 /******************************************************************************/
@@ -79,11 +76,12 @@ void send_message_buffer(NetUserId dest, const char *end_ptr)
     netstate.sp->sendmsg_single(dest, netstate.msg_buffer, message_size);
 }
 
-static void send_host_or_peers(size_t msg_size)
+static void send_remote_buffer(const char *end_ptr)
 {
+    size_t message_size = end_ptr - netstate.msg_buffer;
     if (netstate.my_id != SERVER_ID) {
         if (IsUserActive(SERVER_ID)) {
-            netstate.sp->sendmsg_single(SERVER_ID, netstate.msg_buffer, msg_size);
+            netstate.sp->sendmsg_single(SERVER_ID, netstate.msg_buffer, message_size);
         }
         return;
     }
@@ -91,7 +89,7 @@ static void send_host_or_peers(size_t msg_size)
         if (id == netstate.my_id || !IsUserActive(id)) {
             continue;
         }
-        netstate.sp->sendmsg_single(id, netstate.msg_buffer, msg_size);
+        netstate.sp->sendmsg_single(id, netstate.msg_buffer, message_size);
     }
 }
 
@@ -113,14 +111,14 @@ void LbNetwork_SendChatMessageImmediate(int player_id, const char *message)
     write_pos += 1;
     strcpy(write_pos, message);
     write_pos += strlen(message) + 1;
-    send_host_or_peers(write_pos - netstate.msg_buffer);
+    send_remote_buffer(write_pos);
 }
 
 void LbNetwork_BroadcastUnpause(void)
 {
     MULTIPLAYER_LOG("LbNetwork_BroadcastUnpause");
-    begin_net_message(NETMSG_UNPAUSE);
-    send_host_or_peers(1);
+    char *write_pos = begin_net_message(NETMSG_UNPAUSE);
+    send_remote_buffer(write_pos);
 }
 
 void LbNetwork_SetServerPort(int port) {
