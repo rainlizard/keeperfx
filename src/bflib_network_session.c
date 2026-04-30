@@ -39,8 +39,8 @@ extern void network_yield_draw_frontend(void);
 
 /******************************************************************************/
 
-// More duplicate packets = less packet loss, but more network congestion which is bad when dealing with recovering from packet loss.
-#define SEND_DUPLICATE_PACKETS 2
+// 2 is never good enough
+#define SEND_DUPLICATE_PACKETS 3
 
 static TbBool read_msg_text(char **read_pos, const char **text, size_t max_len)
 {
