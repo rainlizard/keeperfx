@@ -70,6 +70,18 @@ static TbBool host_started_level(const void *server_buf, size_t frame_size)
         && (host_packet->action_par1 > 0);
 }
 
+static TbBool is_frame_message(enum NetMessageType message_type)
+{
+    return message_type == NETMSG_FRONTEND
+        || message_type == NETMSG_STARTUP_SYNC
+        || message_type == NETMSG_GAMEPLAY_UNSEQUENCED;
+}
+
+static void invalidate_frame_message(void)
+{
+    netstate.msg_buffer[0] = 0x7F;
+}
+
 TbBool can_send_to_peer(NetUserId peer_id)
 {
     return (peer_id != netstate.my_id) &&
@@ -135,7 +147,7 @@ TbError exchange_frame_message(void *send_buf, void *server_buf, size_t frame_si
     return Lb_OK;
 }
 
-TbError process_network_message(NetUserId source, void *server_buf, size_t frame_size)
+TbError process_network_message(NetUserId source, void *server_buf, size_t frame_size, enum NetMessageType expected_frame_type)
 {
     size_t message_size = netstate.sp->readmsg(source, netstate.msg_buffer, sizeof(netstate.msg_buffer));
     if (message_size <= 0) {
@@ -223,7 +235,16 @@ TbError process_network_message(NetUserId source, void *server_buf, size_t frame
         UpdateLocalPlayerInfo(user_id);
         return Lb_OK;
     }
-    if (message_type == NETMSG_FRONTEND || message_type == NETMSG_STARTUP_SYNC || message_type == NETMSG_GAMEPLAY_UNSEQUENCED) {
+    if (is_frame_message(message_type)) {
+        if (message_type != expected_frame_type) {
+            return Lb_OK;
+        }
+        size_t header_size = read_pos - netstate.msg_buffer;
+        if (message_size < header_size + 5) {
+            WARNLOG("Frame message type %d from %i is too short", (int)message_type, (int)source);
+            invalidate_frame_message();
+            return Lb_OK;
+        }
         NetUserId peer_id = (NetUserId)*read_pos;
         if (peer_id < 0 || peer_id >= netstate.max_players) {
             ERRORLOG("Critical error: Out of range peer ID %i received, could be used for buffer overflow attack", peer_id);
@@ -231,19 +252,27 @@ TbError process_network_message(NetUserId source, void *server_buf, size_t frame
         }
         if (source != SERVER_ID && source != peer_id) {
             WARNLOG("Peer %i tried to send gameplay frame for peer %i", source, peer_id);
+            invalidate_frame_message();
             return Lb_OK;
         }
         char *player_frame = ((char *)server_buf) + peer_id * frame_size;
         read_pos += 1;
         netstate.users[peer_id].ack = *(int *)read_pos;
         read_pos += 4;
+        size_t payload_size = message_size - (read_pos - netstate.msg_buffer);
         if (message_type == NETMSG_GAMEPLAY_UNSEQUENCED) {
-            size_t payload_size = message_size - (read_pos - netstate.msg_buffer);
             if (!gameplay_unpack_payload(read_pos, payload_size, (PlayerNumber)peer_id, player_frame, frame_size)) {
                 WARNLOG("Invalid gameplay packet bundle from peer %i (%u bytes)", peer_id, (unsigned)payload_size);
+                invalidate_frame_message();
                 return Lb_OK;
             }
         } else {
+            if (payload_size != frame_size) {
+                WARNLOG("Ignoring frame message type %d from peer %i with %u bytes, expected %u bytes",
+                    (int)message_type, peer_id, (unsigned)payload_size, (unsigned)frame_size);
+                invalidate_frame_message();
+                return Lb_OK;
+            }
             memcpy(player_frame, read_pos, frame_size);
         }
         if (netstate.my_id == SERVER_ID) {
@@ -297,14 +326,14 @@ TbError process_network_message(NetUserId source, void *server_buf, size_t frame
 void process_peer_msgs(NetUserId peer_id, void *server_buf, size_t frame_size)
 {
     while (netstate.sp->msgready(peer_id, 0)) {
-        process_network_message(peer_id, server_buf, frame_size);
+        process_network_message(peer_id, server_buf, frame_size, NETMSG_GAMEPLAY_UNSEQUENCED);
     }
 }
 
 static void process_wait_msgs(NetUserId peer_id, void *server_buf, size_t frame_size, enum NetMessageType msg_type, TbBool *has_received_frame)
 {
     while (netstate.sp->msgready(peer_id, 0)) {
-        process_network_message(peer_id, server_buf, frame_size);
+        process_network_message(peer_id, server_buf, frame_size, msg_type);
         if ((enum NetMessageType)netstate.msg_buffer[0] != msg_type) {
             continue;
         }
@@ -360,12 +389,10 @@ TbError LbNetwork_ExchangeLogin(char *player_name)
     while (true) {
         TbClockMSec elapsed = LbTimerClock() - wait_start_time;
         if (elapsed >= TIMEOUT_JOIN_LOBBY) {
-            NETMSG("ExchangeLogin: timed out waiting for login response (%dms)", (int)TIMEOUT_JOIN_LOBBY);
             break;
         }
         if (netstate.sp->msgready(SERVER_ID, 0)) {
-            if (process_network_message(SERVER_ID, &net_screen_packet, sizeof(struct ScreenPacket)) == Lb_FAIL) {
-                NETMSG("ExchangeLogin: process_network_message failed");
+            if (process_network_message(SERVER_ID, &net_screen_packet, sizeof(struct ScreenPacket), NETMSG_FRONTEND) == Lb_FAIL) {
                 break;
             }
             if (netstate.msg_buffer[0] == NETMSG_LOGIN) {
@@ -380,14 +407,12 @@ TbError LbNetwork_ExchangeLogin(char *player_name)
         SDL_Delay(1);
     }
     if (netstate.msg_buffer[0] != NETMSG_LOGIN) {
-        NETMSG("ExchangeLogin: login rejected (msg_buffer[0]=%d)", (int)netstate.msg_buffer[0]);
         return Lb_FAIL;
     }
     if (netstate.sp->msgready(SERVER_ID, TIMEOUT_JOIN_LOBBY)) {
-        process_network_message(SERVER_ID, &net_screen_packet, sizeof(struct ScreenPacket));
+        process_network_message(SERVER_ID, &net_screen_packet, sizeof(struct ScreenPacket), NETMSG_FRONTEND);
     }
     if (netstate.my_id == INVALID_USER_ID) {
-        NETMSG("ExchangeLogin: login unsuccessful, still INVALID_USER_ID");
         return Lb_FAIL;
     }
     return Lb_OK;

@@ -31,7 +31,7 @@ struct Packet;
 
 TbBool can_send_to_peer(NetUserId peer_id);
 TbError exchange_frame_message(void *send_buf, void *server_buf, size_t frame_size, enum NetMessageType msg_type);
-TbError process_network_message(NetUserId source, void *server_buf, size_t frame_size);
+TbError process_network_message(NetUserId source, void *server_buf, size_t frame_size, enum NetMessageType expected_frame_type);
 void process_peer_msgs(NetUserId peer_id, void *server_buf, size_t frame_size);
 
 size_t gameplay_build_payload(PlayerNumber player, const struct Packet *first_packet, void *buffer);

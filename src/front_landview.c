@@ -1751,12 +1751,8 @@ static void frontnetmap_begin_level_start(LevelNumber lvnum)
 {
     set_selected_level_number(lvnum);
     snprintf(level_name, sizeof(level_name), "%s %d", get_string(GUIStr_MnuLevel), (int)lvnum);
-    if (fe_network_active) {
-        map_info.state_trigger = FeSt_START_MPLEVEL;
-    } else {
-        map_info.state_trigger = FeSt_START_KPRLEVEL;
-        fe_computer_players = 1;
-    }
+    map_info.state_trigger = FeSt_START_KPRLEVEL;
+    fe_computer_players = 1;
     frontmap_zoom_in_init(lvnum);
 }
 
@@ -1770,8 +1766,7 @@ TbBool frontnetmap_update_players(void)
         if (((host_packet->networkstatus_flags & NetStat_PlayerConnected) != 0)
          && (screen_packet_action(host_packet) == NetAct_HostStartLevel)
          && (host_packet->action_par1 > 0)) {
-            frontnetmap_begin_level_start(host_packet->action_par1);
-            return true;
+            return frontnet_start_level(campaign.fname, host_packet->action_par1);
         }
     }
 

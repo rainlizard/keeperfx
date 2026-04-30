@@ -116,7 +116,6 @@ extern "C" {
 /******************************************************************************/
 extern TbBool process_players_global_cheats_packet_action(PlayerNumber plyr_idx, struct Packet* pckt);
 extern TbBool process_players_dungeon_control_cheats_packet_action(PlayerNumber plyr_idx, struct Packet* pckt);
-extern TbBool change_campaign(const char *cmpgn_fname);
 /******************************************************************************/
 TbBool unpausing_in_progress = 0;
 /******************************************************************************/
@@ -1821,6 +1820,10 @@ void process_packets(void)
 
 TbBool try_starting_level_from_chat(char* message, long player_id)
 {
+    if (player_id != get_host_player_id()) {
+        return false;
+    }
+
     char *separator_pos = strchr(message, ':');
     if (!separator_pos) {
         separator_pos = strchr(message, ' ');
@@ -1846,15 +1849,7 @@ TbBool try_starting_level_from_chat(char* message, long player_id)
 
     char campaign_filename[80];
     snprintf(campaign_filename, sizeof(campaign_filename), "%.*s.cfg", campaign_len, message);
-
-    if (!change_campaign(campaign_filename)) {
-        ERRORLOG("Unable to load campaign '%.*s' for level %d", campaign_len, message, (int)level_num);
-        return false;
-    }
-
-    set_selected_level_number(level_num);
-    frontend_set_state(FeSt_START_MPLEVEL);
-    return true;
+    return frontnet_queue_level_start(campaign_filename, level_num);
 }
 
 // Using Alt-F4, or similar operating system close requests

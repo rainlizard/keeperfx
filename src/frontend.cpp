@@ -1481,7 +1481,7 @@ void set_packet_start(struct GuiButton *gbtn)
     struct ScreenPacket *nspck;
     nspck = &net_screen_packet[my_player_number];
     if (screen_packet_action(nspck) == NetAct_None)
-        screen_packet_set_action(nspck, NetAct_HostStartLevel);
+        screen_packet_set_action(nspck, NetAct_OpenLandView);
 }
 
 void draw_scrolling_button_string(struct GuiButton *gbtn, const char *text)

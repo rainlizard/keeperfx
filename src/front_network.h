@@ -59,6 +59,8 @@ void frontnet_start_setup(void);
 void frontnet_service_update(void);
 void frontnet_session_update(void);
 void frontnet_start_update(void);
+TbBool frontnet_queue_level_start(const char *campaign_fname, LevelNumber lvnum);
+TbBool frontnet_start_level(const char *campaign_fname, LevelNumber lvnum);
 TbBool frontnet_is_waiting_for_ping_stabilization(void);
 void frontnet_reset_ping_stabilization(void);
 TbBool frontnet_service_selected(enum FrontendNetService service);

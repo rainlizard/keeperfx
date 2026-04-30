@@ -47,6 +47,7 @@
 #include "net_matchmaking.h"
 #include "net_lan.h"
 #include "bflib_enet.h"
+#include "config_campaigns.h"
 #include "post_inc.h"
 
 #ifdef __cplusplus
@@ -70,11 +71,68 @@ char tmp_net_player_name[24];
 static TbClockMSec frontnet_ping_stabilization_end_time = 0;
 static int previous_player_count_for_ping_wait = -1;
 static TbBool attempting_to_join_cancelled = false;
+static char queued_campaign_fname[DISKPATH_SIZE] = "";
+static LevelNumber queued_level_number = SINGLEPLAYER_NOTSTARTED;
 /******************************************************************************/
 #ifdef __cplusplus
 }
 #endif
 /******************************************************************************/
+static void clear_queued_level_start(void)
+{
+    queued_campaign_fname[0] = '\0';
+    queued_level_number = SINGLEPLAYER_NOTSTARTED;
+}
+
+static TbBool queued_level_start_ready(void)
+{
+    return queued_campaign_fname[0] != '\0' && queued_level_number > 0;
+}
+
+TbBool frontnet_queue_level_start(const char *campaign_fname, LevelNumber lvnum)
+{
+    if (campaign_fname == NULL || campaign_fname[0] == '\0' || lvnum <= 0) {
+        return false;
+    }
+
+    snprintf(queued_campaign_fname, sizeof(queued_campaign_fname), "%s", campaign_fname);
+    queued_level_number = lvnum;
+    return true;
+}
+
+TbBool frontnet_start_level(const char *campaign_fname, LevelNumber lvnum)
+{
+    if (campaign_fname == NULL || campaign_fname[0] == '\0' || lvnum <= 0) {
+        return false;
+    }
+    if (!change_campaign(campaign_fname)) {
+        ERRORLOG("Unable to load campaign '%s' for level %d", campaign_fname, (int)lvnum);
+        return false;
+    }
+    if (get_level_info(lvnum) == NULL) {
+        ERRORLOG("Campaign '%s' does not contain level %d", campaign_fname, (int)lvnum);
+        return false;
+    }
+
+    set_selected_level_number(lvnum);
+    fe_network_active = 1;
+    frontend_set_state(FeSt_START_MPLEVEL);
+    return true;
+}
+
+static TbBool apply_queued_level_start(void)
+{
+    if (!queued_level_start_ready()) {
+        return false;
+    }
+
+    char campaign_fname[DISKPATH_SIZE];
+    LevelNumber lvnum = queued_level_number;
+    snprintf(campaign_fname, sizeof(campaign_fname), "%s", queued_campaign_fname);
+    clear_queued_level_start();
+    return frontnet_start_level(campaign_fname, lvnum);
+}
+
 TbBool frontnet_service_selected(enum FrontendNetService service)
 {
     return (net_service_index_selected == service);
@@ -383,6 +441,12 @@ static void process_frontend_packets(void)
   nspckt->frontend_alliances = frontend_alliances;
   nspckt->networkstatus_flags &= ~NetStat_ComputerPlayersMask;
   nspckt->networkstatus_flags |= (fe_computer_players << NetStat_ComputerPlayersShift) & NetStat_ComputerPlayersMask;
+  if (frontend_menu_state == FeSt_NET_START
+   && my_player_number == get_host_player_id()
+   && queued_level_start_ready()) {
+      screen_packet_set_action(nspckt, NetAct_HostStartLevel);
+      nspckt->action_par1 = queued_level_number;
+  }
   if (LbNetwork_ExchangeWithWait(NETMSG_FRONTEND, nspckt, &net_screen_packet, sizeof(struct ScreenPacket))) {
       ERRORLOG("LbNetwork_Exchange failed");
       net_service_index_selected = -1;
@@ -406,12 +470,17 @@ static void process_frontend_packets(void)
             if (version_mismatch_found) {
                 break;
             }
-            fe_network_active = 1;
-            if (game_flags2 & GF2_Connect) {
-                frontend_set_state(FeSt_START_MPLEVEL);
-            } else {
-                frontend_set_state(FeSt_NETLAND_VIEW);
+            if (nspckt->action_par1 <= 0 || !queued_level_start_ready()) {
+                break;
             }
+            apply_queued_level_start();
+            break;
+        case NetAct_OpenLandView:
+            if (version_mismatch_found) {
+                break;
+            }
+            fe_network_active = 1;
+            frontend_set_state(FeSt_NETLAND_VIEW);
             break;
         case NetAct_SetAlliance:
             frontend_set_alliance(nspckt->action_par1, nspckt->action_par2);
@@ -637,6 +706,7 @@ void frontnet_session_setup(void)
 void frontnet_start_setup(void)
 {
     frontnet_reset_ping_stabilization();
+    clear_queued_level_start();
     memset(&net_screen_packet[my_player_number], 0, sizeof(struct ScreenPacket));
     frontend_alliances = -1;
     net_number_of_messages = 0;
