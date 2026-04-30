@@ -35,8 +35,8 @@ extern void network_yield_waiting_gameplay_packets(void);
 
 /******************************************************************************/
 
-#define PACKET_HISTORY_SIZE 32
-#define PROACTIVE_HISTORY_SEND_MS 2000
+#define PACKET_HISTORY_SIZE 20
+#define PROACTIVE_HISTORY_SEND_MS 2500
 #define REDUNDANT_PACKET_BUNDLE 2
 
 struct ReceivedPacketEntry {
