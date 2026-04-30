@@ -31,9 +31,9 @@ struct Packet;
 
 void initialize_packet_history(void);
 const struct Packet* get_received_turn_packets(GameTurn turn);
-TbError LbNetwork_ExchangeGameplay(void *send_buf, void *server_buf, size_t buf_size);
-TbError LbNetwork_ExchangeWithWait(enum NetMessageType msg_type, void *send_buf, void *server_buf, size_t buf_size);
-TbError LbNetwork_ExchangeLogin(char *plyr_name);
+TbError LbNetwork_ExchangeGameplay(void *send_buf, void *server_buf, size_t frame_size);
+TbError LbNetwork_ExchangeWithWait(enum NetMessageType msg_type, void *send_buf, void *server_buf, size_t frame_size);
+TbError LbNetwork_ExchangeLogin(char *player_name);
 void LbNetwork_SendChatMessageImmediate(int player_id, const char *message);
 void LbNetwork_BroadcastUnpauseTimesync(void);
 
