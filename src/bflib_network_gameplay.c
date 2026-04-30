@@ -378,9 +378,7 @@ TbError LbNetwork_ExchangeGameplay(void *send_buf, void *server_buf, size_t fram
                         if (!can_send_to_peer(peer_id)) {
                             continue;
                         }
-                        if (netstate.my_id == SERVER_ID && has_received_player_packet(expected_turn, (PlayerNumber)peer_id)) {
-                            continue;
-                        }
+                        /* Keep draining every peer while stalled so future packets do not back up behind one missing turn. */
                         process_peer_msgs(peer_id, server_buf, frame_size);
                         if (netstate.my_id != SERVER_ID && netstate.users[SERVER_ID].progress == USER_UNUSED) {
                             MULTIPLAYER_LOG("LbNetwork_ExchangeGameplay: Host disconnected while collecting turn=%lu", (unsigned long)expected_turn);

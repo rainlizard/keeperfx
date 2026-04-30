@@ -53,6 +53,11 @@ static TbBool read_msg_text(char **read_pos, const char **text, size_t max_len)
     return true;
 }
 
+static TbBool reject_new_user(NetUserId *)
+{
+    return false;
+}
+
 static TbBool host_started_level(const void *server_buf, size_t frame_size)
 {
     if (frame_size != sizeof(struct ScreenPacket)) {
@@ -305,6 +310,16 @@ static void process_wait_msgs(NetUserId peer_id, void *server_buf, size_t frame_
     }
 }
 
+static void process_all_wait_msgs(void *server_buf, size_t frame_size, enum NetMessageType msg_type, TbBool *has_received_frame)
+{
+    for (NetUserId peer_id = 0; peer_id < netstate.max_players; peer_id += 1) {
+        if (!can_send_to_peer(peer_id)) {
+            continue;
+        }
+        process_wait_msgs(peer_id, server_buf, frame_size, msg_type, has_received_frame);
+    }
+}
+
 static TbBool have_peer_frame(NetUserId peer_id, const TbBool *has_received_frame)
 {
     if (my_player_number == get_host_player_id()) {
@@ -343,18 +358,21 @@ TbError LbNetwork_ExchangeLogin(char *player_name)
             NETMSG("ExchangeLogin: timed out waiting for login response (%dms)", (int)TIMEOUT_JOIN_LOBBY);
             break;
         }
-        unsigned wait_ms = (unsigned)(TIMEOUT_JOIN_LOBBY - elapsed);
-        if (!netstate.sp->msgready(SERVER_ID, wait_ms)) {
-            NETMSG("ExchangeLogin: msgready returned false");
-            break;
+        if (netstate.sp->msgready(SERVER_ID, 0)) {
+            if (process_network_message(SERVER_ID, &net_screen_packet, sizeof(struct ScreenPacket)) == Lb_FAIL) {
+                NETMSG("ExchangeLogin: process_network_message failed");
+                break;
+            }
+            if (netstate.msg_buffer[0] == NETMSG_LOGIN) {
+                break;
+            }
+            continue;
         }
-        if (process_network_message(SERVER_ID, &net_screen_packet, sizeof(struct ScreenPacket)) == Lb_FAIL) {
-            NETMSG("ExchangeLogin: process_network_message failed");
-            break;
+        netstate.sp->update(reject_new_user);
+        if (netstate.sp->msgready(SERVER_ID, 0)) {
+            continue;
         }
-        if (netstate.msg_buffer[0] == NETMSG_LOGIN) {
-            break;
-        }
+        SDL_Delay(1);
     }
     if (netstate.msg_buffer[0] != NETMSG_LOGIN) {
         NETMSG("ExchangeLogin: login rejected (msg_buffer[0]=%d)", (int)netstate.msg_buffer[0]);
@@ -393,12 +411,18 @@ TbError LbNetwork_ExchangeWithWait(enum NetMessageType msg_type, void *send_buf,
                 break;
             }
 
-            unsigned wait_ms = min(TIMEOUT_LOBBY_EXCHANGE - elapsed, (TbClockMSec)16);
-            if (netstate.sp->msgready(peer_id, wait_ms)) {
-                process_wait_msgs(peer_id, server_buf, frame_size, msg_type, has_received_frame);
-                if (msg_type == NETMSG_FRONTEND) {
-                    should_stop_waiting = host_started_level(server_buf, frame_size);
-                }
+            process_all_wait_msgs(server_buf, frame_size, msg_type, has_received_frame);
+            if (msg_type == NETMSG_FRONTEND) {
+                should_stop_waiting = host_started_level(server_buf, frame_size);
+            }
+            if (have_peer_frame(peer_id, has_received_frame) || should_stop_waiting) {
+                break;
+            }
+
+            netstate.sp->update(OnNewUser);
+            process_all_wait_msgs(server_buf, frame_size, msg_type, has_received_frame);
+            if (msg_type == NETMSG_FRONTEND) {
+                should_stop_waiting = host_started_level(server_buf, frame_size);
             }
 
             if (have_peer_frame(peer_id, has_received_frame)) {
@@ -410,6 +434,7 @@ TbError LbNetwork_ExchangeWithWait(enum NetMessageType msg_type, void *send_buf,
             } else {
                 network_yield_draw_gameplay();
             }
+            SDL_Delay(1);
         }
         if (should_stop_waiting) {
             break;
