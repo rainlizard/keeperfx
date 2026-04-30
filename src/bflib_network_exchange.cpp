@@ -176,29 +176,24 @@ static unsigned char copy_packet_history(struct Packet* out_packets, const struc
 
 static size_t make_packet_bundle(PlayerNumber player, struct RedundantPacketBundle* packet_bundle, unsigned char packet_count, const struct Packet* first_packet)
 {
-    unsigned char valid_count = 0;
     const struct PacketHistory* history;
+    packet_bundle->valid_count = 0;
     if (!valid_history_player(player) || packet_count < 1) {
         return 0;
     }
-
     history = &packet_history[player];
-    if (first_packet == NULL && history->valid_count < 1) {
-        return 0;
-    }
     if (first_packet != NULL) {
         packet_bundle->packets[0] = *first_packet;
-        valid_count = 1;
+        packet_bundle->valid_count = 1;
     }
-    valid_count += copy_packet_history(&packet_bundle->packets[valid_count], history, packet_count - valid_count, first_packet);
-    packet_bundle->valid_count = valid_count;
+    packet_bundle->valid_count += copy_packet_history(&packet_bundle->packets[packet_bundle->valid_count], history, packet_count - packet_bundle->valid_count, first_packet);
     if (first_packet != NULL) {
         store_packet_history(player, first_packet);
     }
-    if (valid_count < 1) {
+    if (packet_bundle->valid_count < 1) {
         return 0;
     }
-    return packet_list_size(valid_count);
+    return packet_list_size(packet_bundle->valid_count);
 }
 
 static TbBool read_packet_bundle(const char* packet_bundle_buffer, size_t packet_bundle_buffer_size, PlayerNumber source_player, void* out_packet, size_t packet_size)
@@ -231,15 +226,12 @@ static TbBool read_packet_bundle(const char* packet_bundle_buffer, size_t packet
 static void send_packet_history(NetUserId destination, PlayerNumber player)
 {
     char packet_history_buffer[sizeof(struct RedundantPacketBundle)];
-    struct RedundantPacketBundle* packet_bundle = (struct RedundantPacketBundle*)packet_history_buffer;
-    size_t packet_history_size = make_packet_bundle(player, packet_bundle, PACKET_HISTORY_SIZE, NULL);
+    size_t packet_history_size = make_packet_bundle(player, (struct RedundantPacketBundle*)packet_history_buffer, PACKET_HISTORY_SIZE, NULL);
     if (packet_history_size == 0) {
         return;
     }
-
     uLong data_crc = crc32(0L, Z_NULL, 0);
     data_crc = crc32(data_crc, (const Bytef*)packet_history_buffer, packet_history_size);
-
     uLongf compressed_size = compressBound(packet_history_size);
     size_t message_capacity = sizeof(unsigned char) + sizeof(struct GameplayPacketHeader) + compressed_size;
     char* message_buffer = (char*)malloc(message_capacity);
@@ -247,7 +239,6 @@ static void send_packet_history(NetUserId destination, PlayerNumber player)
         ERRORLOG("Failed to allocate gameplay packet history message buffer");
         return;
     }
-
     char* compressed_buffer = message_buffer + sizeof(unsigned char) + sizeof(struct GameplayPacketHeader);
     int compress_result = compress((Bytef*)compressed_buffer, &compressed_size, (const Bytef*)packet_history_buffer, packet_history_size);
     if (compress_result != Z_OK) {
@@ -255,20 +246,12 @@ static void send_packet_history(NetUserId destination, PlayerNumber player)
         free(message_buffer);
         return;
     }
-
-    struct GameplayPacketHeader header;
-    header.player = player;
-    header.compressed_length = compressed_size;
-    header.original_length = packet_history_size;
-    header.data_checksum = (unsigned int)data_crc;
-
-    size_t message_size = sizeof(unsigned char) + sizeof(struct GameplayPacketHeader) + compressed_size;
+    struct GameplayPacketHeader header = {(PlayerNumber)player, (unsigned int)compressed_size, (unsigned int)packet_history_size, (unsigned int)data_crc};
     message_buffer[0] = NETMSG_GAMEPLAY_PACKET_HISTORY;
     memcpy(message_buffer + sizeof(unsigned char), &header, sizeof(header));
     MULTIPLAYER_LOG("Sending compressed gameplay packet history for player=%d to peer=%d (%lu -> %lu bytes)",
         (int)player, (int)destination, (unsigned long)packet_history_size, (unsigned long)compressed_size);
-    netstate.sp->sendmsg_single(destination, message_buffer, message_size);
-
+    netstate.sp->sendmsg_single(destination, message_buffer, sizeof(unsigned char) + sizeof(struct GameplayPacketHeader) + compressed_size);
     free(message_buffer);
 }
 
@@ -500,8 +483,7 @@ TbError ProcessMessage(NetUserId source, void* server_buf, size_t frame_size)
         return Lb_OK;
     }
     if (type == NETMSG_GAMEPLAY_PACKET_HISTORY) {
-        size_t payload_size = msg_size - (ptr - netstate.msg_buffer);
-        receive_packet_history(source, source == SERVER_ID, ptr, payload_size, server_buf, frame_size);
+        receive_packet_history(source, source == SERVER_ID, ptr, msg_size - (ptr - netstate.msg_buffer), server_buf, frame_size);
         return Lb_OK;
     }
     return Lb_OK;
@@ -586,21 +568,12 @@ static TbBool host_gone(void)
     return netstate.my_id != SERVER_ID && netstate.users[SERVER_ID].progress == USER_UNUSED;
 }
 
-static TbBool host_started_level(const void* server_buf, size_t frame_size)
+static TbBool host_started_level(const struct ScreenPacket* screen_packets)
 {
-    const struct ScreenPacket* host_packet;
-    if (frame_size != sizeof(struct ScreenPacket)) {
-        return false;
-    }
-
-    host_packet = &((const struct ScreenPacket*)server_buf)[get_host_player_id()];
-    if ((host_packet->networkstatus_flags & NetStat_PlayerConnected) == 0) {
-        return false;
-    }
-    if (screen_packet_action(host_packet) != NetAct_HostStartLevel) {
-        return false;
-    }
-    return host_packet->action_par1 > 0;
+    const struct ScreenPacket* host_packet = &screen_packets[get_host_player_id()];
+    return ((host_packet->networkstatus_flags & NetStat_PlayerConnected) != 0)
+        && (screen_packet_action(host_packet) == NetAct_HostStartLevel)
+        && (host_packet->action_par1 > 0);
 }
 
 static TbBool receive_packet_history(NetUserId source, TbBool from_server, const char* buffer, size_t payload_size, void* server_buf, size_t frame_size)
@@ -790,10 +763,8 @@ TbError LbNetwork_ExchangeWithWait(enum NetMessageType msg_type, void *send_buf,
         return Lb_FAIL;
     }
 
-    TbBool stop_waiting = false;
-    if (msg_type == NETMSG_FRONTEND) {
-        stop_waiting = host_started_level(server_buf, client_frame_size);
-    }
+    TbBool stop_waiting = msg_type == NETMSG_FRONTEND && client_frame_size == sizeof(struct ScreenPacket)
+        && host_started_level((const struct ScreenPacket*)server_buf);
     TbBool received_frames[MAX_N_USERS] = {false};
     for (NetUserId peer_id = 0; peer_id < netstate.max_players; peer_id += 1) {
         if (!can_send_peer(peer_id)) {
@@ -818,9 +789,8 @@ TbError LbNetwork_ExchangeWithWait(enum NetMessageType msg_type, void *send_buf,
                         }
                     }
                 }
-                if (msg_type == NETMSG_FRONTEND) {
-                    stop_waiting = host_started_level(server_buf, client_frame_size);
-                }
+                stop_waiting = msg_type == NETMSG_FRONTEND && client_frame_size == sizeof(struct ScreenPacket)
+                    && host_started_level((const struct ScreenPacket*)server_buf);
             }
 
             TbBool received_frame = received_frames[peer_id];
