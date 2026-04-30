@@ -295,68 +295,53 @@ static TbBool history_send_due(TbClockMSec wait_start_time, TbClockMSec *last_se
 
 static void send_packet_history(void)
 {
-    NetUserId target_peer = SERVER_ID;
-    if (netstate.my_id == SERVER_ID && netstate.max_players > 1) {
-        static NetUserId next_target_peer = 1;
-        TbBool found_target = false;
-        if (next_target_peer < 1 || next_target_peer >= netstate.max_players) {
-            next_target_peer = 1;
-        }
-        for (NetUserId attempts = 0; attempts < netstate.max_players - 1; attempts += 1) {
-            NetUserId candidate = next_target_peer;
-            next_target_peer += 1;
-            if (next_target_peer >= netstate.max_players) {
-                next_target_peer = 1;
-            }
-            if (!can_send_to_peer(candidate)) {
-                continue;
-            }
-            target_peer = candidate;
-            found_target = true;
-            break;
-        }
-        if (!found_target) {
-            return;
-        }
-    }
-    if (!can_send_to_peer(target_peer)) {
-        return;
+    NetUserId first_target = SERVER_ID;
+    NetUserId target_limit = SERVER_ID + 1;
+    if (netstate.my_id == SERVER_ID) {
+        first_target = 1;
+        target_limit = netstate.max_players;
     }
 
-    for (PlayerNumber player = 0; player < netstate.max_players; player += 1) {
-        if (player == target_peer ||
-            (netstate.my_id != SERVER_ID && player != netstate.my_id) ||
-            (player != netstate.my_id && !network_player_active(player))) {
+    for (NetUserId target_peer = first_target; target_peer < target_limit; target_peer += 1) {
+        if (!can_send_to_peer(target_peer)) {
             continue;
         }
-        char packet_history_buffer[sizeof(struct RedundantPacketBundle)];
-        size_t packet_history_size = build_history_bundle(player, (struct RedundantPacketBundle *)packet_history_buffer, PACKET_HISTORY_SIZE, NULL);
-        if (packet_history_size == 0) {
-            continue;
-        }
-        uLong data_crc = crc32(0L, Z_NULL, 0);
-        data_crc = crc32(data_crc, (const Bytef *)packet_history_buffer, packet_history_size);
-        uLongf compressed_size = compressBound(packet_history_size);
-        size_t message_size = sizeof(unsigned char) + sizeof(struct PacketHistoryHeader) + compressed_size;
-        char *message_buffer = (char *)malloc(message_size);
-        if (message_buffer == NULL) {
-            ERRORLOG("Failed to allocate gameplay packet history message buffer");
-            continue;
-        }
-        char *compressed_buffer = message_buffer + sizeof(unsigned char) + sizeof(struct PacketHistoryHeader);
-        int compress_result = compress((Bytef *)compressed_buffer, &compressed_size, (const Bytef *)packet_history_buffer, packet_history_size);
-        if (compress_result != Z_OK) {
-            ERRORLOG("Gameplay packet history compression failed for player %d: zlib error %d", (int)player, compress_result);
+
+        for (PlayerNumber player = 0; player < netstate.max_players; player += 1) {
+            if (player == target_peer ||
+                (netstate.my_id != SERVER_ID && player != netstate.my_id) ||
+                (player != netstate.my_id && !network_player_active(player))) {
+                continue;
+            }
+            char packet_history_buffer[sizeof(struct RedundantPacketBundle)];
+            size_t packet_history_size = build_history_bundle(player, (struct RedundantPacketBundle *)packet_history_buffer, PACKET_HISTORY_SIZE, NULL);
+            if (packet_history_size == 0) {
+                continue;
+            }
+            uLong data_crc = crc32(0L, Z_NULL, 0);
+            data_crc = crc32(data_crc, (const Bytef *)packet_history_buffer, packet_history_size);
+            uLongf compressed_size = compressBound(packet_history_size);
+            size_t message_size = sizeof(unsigned char) + sizeof(struct PacketHistoryHeader) + compressed_size;
+            char *message_buffer = (char *)malloc(message_size);
+            if (message_buffer == NULL) {
+                ERRORLOG("Failed to allocate gameplay packet history message buffer");
+                continue;
+            }
+            char *compressed_buffer = message_buffer + sizeof(unsigned char) + sizeof(struct PacketHistoryHeader);
+            int compress_result = compress((Bytef *)compressed_buffer, &compressed_size, (const Bytef *)packet_history_buffer, packet_history_size);
+            if (compress_result != Z_OK) {
+                ERRORLOG("Gameplay packet history compression failed for player %d: zlib error %d", (int)player, compress_result);
+                free(message_buffer);
+                continue;
+            }
+            struct PacketHistoryHeader header = { (PlayerNumber)player, (unsigned int)compressed_size, (unsigned int)packet_history_size, (unsigned int)data_crc };
+            message_buffer[0] = NETMSG_GAMEPLAY_PACKET_HISTORY;
+            memcpy(message_buffer + sizeof(unsigned char), &header, sizeof(header));
+            MULTIPLAYER_LOG("Sending unsequenced compressed gameplay packet history for player=%d to peer=%d (%lu -> %lu bytes)",
+                (int)player, (int)target_peer, (unsigned long)packet_history_size, (unsigned long)compressed_size);
+            netstate.sp->sendmsg_single_unsequenced(target_peer, message_buffer, sizeof(unsigned char) + sizeof(struct PacketHistoryHeader) + compressed_size);
             free(message_buffer);
-            continue;
         }
-        struct PacketHistoryHeader header = { (PlayerNumber)player, (unsigned int)compressed_size, (unsigned int)packet_history_size, (unsigned int)data_crc };
-        message_buffer[0] = NETMSG_GAMEPLAY_PACKET_HISTORY;
-        memcpy(message_buffer + sizeof(unsigned char), &header, sizeof(header));
-        MULTIPLAYER_LOG("Sending unsequenced compressed gameplay packet history for player=%d to peer=%d (%lu -> %lu bytes)",
-            (int)player, (int)target_peer, (unsigned long)packet_history_size, (unsigned long)compressed_size);
-        netstate.sp->sendmsg_single_unsequenced(target_peer, message_buffer, sizeof(unsigned char) + sizeof(struct PacketHistoryHeader) + compressed_size);
-        free(message_buffer);
     }
 }
 
