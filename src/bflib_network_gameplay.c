@@ -337,9 +337,9 @@ static void send_packet_history(void)
             struct PacketHistoryHeader header = { (PlayerNumber)player, (unsigned int)compressed_size, (unsigned int)packet_history_size, (unsigned int)data_crc };
             message_buffer[0] = NETMSG_GAMEPLAY_PACKET_HISTORY;
             memcpy(message_buffer + sizeof(unsigned char), &header, sizeof(header));
-            MULTIPLAYER_LOG("Sending unsequenced compressed gameplay packet history for player=%d to peer=%d (%lu -> %lu bytes)",
+            MULTIPLAYER_LOG("Sending reliable compressed gameplay packet history for player=%d to peer=%d (%lu -> %lu bytes)",
                 (int)player, (int)target_peer, (unsigned long)packet_history_size, (unsigned long)compressed_size);
-            netstate.sp->sendmsg_single_unsequenced(target_peer, message_buffer, sizeof(unsigned char) + sizeof(struct PacketHistoryHeader) + compressed_size);
+            netstate.sp->sendmsg_single(target_peer, message_buffer, message_size);
             free(message_buffer);
         }
     }
