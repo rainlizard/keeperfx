@@ -36,8 +36,8 @@ extern void network_yield_waiting_gameplay_packets(void);
 /******************************************************************************/
 
 #define PACKET_HISTORY_SIZE 20
-#define WAITING_HISTORY_SEND_MS 50
-#define WAITING_HISTORY_COOLDOWN_MS 2500
+#define WAITING_HISTORY_MIN_DELAY_MS 50
+#define WAITING_HISTORY_COOLDOWN_MS 500
 #define REDUNDANT_PACKET_BUNDLE 2
 
 struct ReceivedPacketEntry {
@@ -73,6 +73,7 @@ static struct {
 } received_packet_history;
 
 static struct PlayerPacketHistory player_packet_history[MAX_N_USERS];
+static TbClockMSec last_packet_history_send;
 
 static TbBool is_history_player_valid(PlayerNumber player)
 {
@@ -248,6 +249,7 @@ void initialize_packet_history(void)
 {
     memset(&received_packet_history, 0, sizeof(received_packet_history));
     memset(player_packet_history, 0, sizeof(player_packet_history));
+    last_packet_history_send = 0;
 }
 
 const struct Packet *get_received_turn_packets(GameTurn turn)
@@ -281,17 +283,16 @@ static TbBool have_all_turn_packets(PlayerNumber local_packet_player)
     return true;
 }
 
-static TbBool history_send_due(TbClockMSec wait_start_time, TbClockMSec *last_send_time, TbBool *history_sent)
+static TbBool history_send_due(TbClockMSec wait_start_time)
 {
     TbClockMSec current_time = LbTimerClock();
-    if (current_time - wait_start_time < WAITING_HISTORY_SEND_MS) {
+    if (current_time - wait_start_time < WAITING_HISTORY_MIN_DELAY_MS) {
         return false;
     }
-    if (*history_sent && current_time - *last_send_time < WAITING_HISTORY_COOLDOWN_MS) {
+    if (last_packet_history_send != 0 && current_time - last_packet_history_send < WAITING_HISTORY_COOLDOWN_MS) {
         return false;
     }
-    *last_send_time = current_time;
-    *history_sent = true;
+    last_packet_history_send = current_time;
     return true;
 }
 
@@ -366,8 +367,6 @@ TbError LbNetwork_ExchangeGameplay(void *send_buf, void *server_buf, size_t fram
             if (!have_all_turn_packets(local_packet_player)) {
                 GameTurn expected_turn = get_gameturn() - game.input_lag_turns;
                 TbClockMSec wait_start_time = LbTimerClock();
-                TbClockMSec last_history_send = 0;
-                TbBool history_sent = false;
                 MULTIPLAYER_LOG("LbNetwork_ExchangeGameplay: Missing packets for turn=%lu, collecting...", (unsigned long)expected_turn);
 
                 while (!have_all_turn_packets(local_packet_player)) {
@@ -401,7 +400,7 @@ TbError LbNetwork_ExchangeGameplay(void *send_buf, void *server_buf, size_t fram
                         MULTIPLAYER_LOG("LbNetwork_ExchangeGameplay: Missing packets remained for turn=%lu after collection", (unsigned long)expected_turn);
                         break;
                     }
-                    if (history_send_due(wait_start_time, &last_history_send, &history_sent)) {
+                    if (history_send_due(wait_start_time)) {
                         send_packet_history();
                     }
                     network_yield_waiting_gameplay_packets();
