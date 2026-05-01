@@ -136,9 +136,6 @@ TbError exchange_frame_message(void *send_buf, void *server_buf, size_t frame_si
     size_t message_size = write_pos - netstate.msg_buffer;
     TbBool unsequenced = (msg_type == NETMSG_GAMEPLAY_UNSEQUENCED);
     for (NetUserId peer_id = 0; peer_id < netstate.max_players; peer_id += 1) {
-        if (peer_id == netstate.my_id) {
-            continue;
-        }
         if (!can_send_to_peer(peer_id)) {
             continue;
         }
@@ -330,11 +327,8 @@ static void process_wait_msgs(NetUserId peer_id, void *server_buf, size_t frame_
 {
     while (netstate.sp->msgready(peer_id, 0)) {
         process_network_message(peer_id, server_buf, frame_size, msg_type);
-        if ((enum NetMessageType)netstate.msg_buffer[0] != msg_type) {
-            continue;
-        }
         NetUserId frame_peer_id = (unsigned char)netstate.msg_buffer[1];
-        if (frame_peer_id < netstate.max_players) {
+        if ((enum NetMessageType)netstate.msg_buffer[0] == msg_type && frame_peer_id < netstate.max_players) {
             has_received_frame[frame_peer_id] = true;
         }
     }
@@ -382,25 +376,18 @@ TbError LbNetwork_ExchangeLogin(char *player_name)
     write_pos += sizeof(net_current_version);
     send_message_buffer(SERVER_ID, write_pos);
     TbClockMSec wait_start_time = LbTimerClock();
-    while (true) {
-        TbClockMSec elapsed = LbTimerClock() - wait_start_time;
-        if (elapsed >= TIMEOUT_JOIN_LOBBY) {
-            break;
-        }
+    while (LbTimerClock() - wait_start_time < TIMEOUT_JOIN_LOBBY) {
         if (netstate.sp->msgready(SERVER_ID, 0)) {
-            if (process_network_message(SERVER_ID, &net_screen_packet, sizeof(struct ScreenPacket), NETMSG_FRONTEND) == Lb_FAIL) {
-                break;
-            }
-            if (netstate.msg_buffer[0] == NETMSG_LOGIN) {
+            if (process_network_message(SERVER_ID, &net_screen_packet, sizeof(struct ScreenPacket), NETMSG_FRONTEND) == Lb_FAIL
+             || netstate.msg_buffer[0] == NETMSG_LOGIN) {
                 break;
             }
             continue;
         }
         netstate.sp->update(reject_new_user);
-        if (netstate.sp->msgready(SERVER_ID, 0)) {
-            continue;
+        if (!netstate.sp->msgready(SERVER_ID, 0)) {
+            SDL_Delay(1);
         }
-        SDL_Delay(1);
     }
     if (netstate.msg_buffer[0] != NETMSG_LOGIN) {
         return Lb_FAIL;
@@ -420,10 +407,8 @@ TbError LbNetwork_ExchangeWithWait(enum NetMessageType msg_type, void *send_buf,
         return Lb_FAIL;
     }
 
-    TbBool should_stop_waiting = false;
-    if (msg_type == NETMSG_FRONTEND) {
-        should_stop_waiting = host_started_level(server_buf, frame_size);
-    }
+    TbBool is_frontend_msg = (msg_type == NETMSG_FRONTEND);
+    TbBool should_stop_waiting = is_frontend_msg && host_started_level(server_buf, frame_size);
     TbBool has_received_frame[MAX_N_USERS] = {false};
     for (NetUserId peer_id = 0; peer_id < netstate.max_players; peer_id += 1) {
         if (!can_send_to_peer(peer_id)) {
@@ -432,30 +417,28 @@ TbError LbNetwork_ExchangeWithWait(enum NetMessageType msg_type, void *send_buf,
 
         TbClockMSec wait_start_time = LbTimerClock();
         while (netstate.users[peer_id].progress != USER_UNUSED && !should_stop_waiting) {
-            TbClockMSec elapsed = LbTimerClock() - wait_start_time;
-            if (elapsed >= TIMEOUT_LOBBY_EXCHANGE) {
+            if (LbTimerClock() - wait_start_time >= TIMEOUT_LOBBY_EXCHANGE) {
                 break;
             }
 
-            process_all_wait_msgs(server_buf, frame_size, msg_type, has_received_frame);
-            if (msg_type == NETMSG_FRONTEND) {
-                should_stop_waiting = host_started_level(server_buf, frame_size);
+            TbBool peer_has_frame = false;
+            for (int pass = 0; pass < 2; pass += 1) {
+                if (pass > 0) {
+                    netstate.sp->update(OnNewUser);
+                }
+                process_all_wait_msgs(server_buf, frame_size, msg_type, has_received_frame);
+                if (is_frontend_msg) {
+                    should_stop_waiting = should_stop_waiting || host_started_level(server_buf, frame_size);
+                }
+                peer_has_frame = have_peer_frame(peer_id, has_received_frame);
+                if (should_stop_waiting || peer_has_frame) {
+                    break;
+                }
             }
-            if (have_peer_frame(peer_id, has_received_frame) || should_stop_waiting) {
+            if (should_stop_waiting || peer_has_frame) {
                 break;
             }
-
-            netstate.sp->update(OnNewUser);
-            process_all_wait_msgs(server_buf, frame_size, msg_type, has_received_frame);
-            if (msg_type == NETMSG_FRONTEND) {
-                should_stop_waiting = host_started_level(server_buf, frame_size);
-            }
-
-            if (have_peer_frame(peer_id, has_received_frame)) {
-                break;
-            }
-
-            if (msg_type == NETMSG_FRONTEND) {
+            if (is_frontend_msg) {
                 network_yield_draw_frontend();
             } else {
                 network_yield_draw_gameplay();
