@@ -36,7 +36,7 @@ extern "C" {
 #define TIMEOUT_JOIN_LOBBY 2000
 #define TIMEOUT_LOBBY_EXCHANGE 3000
 #define PEER_TIMEOUT_LIMIT 32
-#define PEER_TIMEOUT_MIN_MS 8000
+#define PEER_TIMEOUT_MIN_MS 5000
 #define PEER_TIMEOUT_MAX_MS 30000
 #define TIMEOUT_GAMEPLAY_MISSING_PACKET PEER_TIMEOUT_MAX_MS
 /******************************************************************************/
