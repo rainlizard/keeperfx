@@ -336,10 +336,7 @@ static TbBool send_due(TbClockMSec *last_send_time, TbClockMSec interval)
 
 static TbBool host_lost(GameTurn turn, const char *state)
 {
-    if (netstate.my_id == SERVER_ID) {
-        return false;
-    }
-    if (netstate.users[SERVER_ID].progress != USER_UNUSED) {
+    if (netstate.my_id == SERVER_ID || netstate.users[SERVER_ID].progress != USER_UNUSED) {
         return false;
     }
     MULTIPLAYER_LOG("LbNetwork_ExchangeGameplay: Host disconnected while %s turn=%lu", state, (unsigned long)turn);
@@ -389,10 +386,9 @@ static void send_full_history(NetUserId peer_id)
 {
     if (netstate.my_id != SERVER_ID) {
         PlayerNumber player = (PlayerNumber)netstate.my_id;
-        if (!is_history_player_valid(player)) {
-            return;
+        if (is_history_player_valid(player)) {
+            send_history_to(peer_id, player, PACKET_HISTORY_SIZE, NULL);
         }
-        send_history_to(peer_id, player, PACKET_HISTORY_SIZE, NULL);
         return;
     }
 
@@ -468,10 +464,7 @@ TbError LbNetwork_ExchangeGameplay(void *send_buf, void *server_buf, size_t fram
                         return Lb_OK;
                     }
                     turn_complete = have_all_turn_packets(local_packet_player);
-                    if (turn_complete) {
-                        break;
-                    }
-                    for (NetUserId peer_id = 0; peer_id < netstate.max_players; peer_id += 1) {
+                    for (NetUserId peer_id = 0; peer_id < netstate.max_players && !turn_complete; peer_id += 1) {
                         if (!can_send_to_peer(peer_id)) {
                             continue;
                         }
@@ -483,9 +476,6 @@ TbError LbNetwork_ExchangeGameplay(void *send_buf, void *server_buf, size_t fram
                             return Lb_OK;
                         }
                         turn_complete = have_all_turn_packets(local_packet_player);
-                        if (turn_complete) {
-                            break;
-                        }
                     }
                     if (turn_complete) {
                         break;
