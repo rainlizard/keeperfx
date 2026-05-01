@@ -23,6 +23,7 @@
 #include "bflib_network_internal.h"
 #include "bflib_datetm.h"
 #include "globals.h"
+#include "net_input_lag.h"
 #include "player_data.h"
 #include "net_game.h"
 #include "packets.h"
@@ -35,7 +36,7 @@ extern int32_t sync_multiplayer_turn_ns;
 
 /******************************************************************************/
 
-#define PACKET_HISTORY_SIZE 32
+#define PACKET_HISTORY_SIZE (MAXIMUM_INPUT_LAG_TURNS + 1)
 #define SEND_HISTORY_COOLDOWN_MS 500
 
 struct PacketHistory {
