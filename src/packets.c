@@ -576,7 +576,7 @@ static TbBool network_has_connected_human_opponents(void)
 {
     for (int i = 0; i < PLAYERS_COUNT; i++) {
         struct PlayerInfo* player = get_player(i);
-        if (player_exists(player) && !is_my_player(player) && player->is_active == 1 && (player->allocflags & PlaF_CompCtrl) == 0 && player->victory_state == VicS_Undecided && network_player_active(player->packet_num)) {
+        if (player_exists(player) && !is_my_player(player) && player->is_active == 1 && (player->allocflags & PlaF_CompCtrl) == 0 && network_player_active(player->packet_num)) {
             return true;
         }
     }
