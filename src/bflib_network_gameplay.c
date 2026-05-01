@@ -38,6 +38,7 @@ extern void network_yield_waiting_gameplay_packets(void);
 #define PACKET_HISTORY_SIZE 32
 #define PACKET_HISTORY_INTERVAL_MS 500
 #define WAITING_HOST_RESEND_COOLDOWN_MS 500
+// Redundant packet value represents current packet + additional packets.
 #define REDUNDANT_PACKET_BUNDLE 2
 
 struct PacketHistoryEntry {
