@@ -126,7 +126,7 @@ TbError exchange_frame_message(void *send_buf, void *server_buf, size_t frame_si
     *(int *)write_pos = netstate.seq_nbr;
     write_pos += 4;
     if (msg_type == NETMSG_GAMEPLAY_UNSEQUENCED) {
-        size_t payload_size = gameplay_build_payload((PlayerNumber)netstate.my_id, GAMEPLAY_PACKET_BUNDLE, (const struct Packet *)send_buf, write_pos);
+        size_t payload_size = build_packet_payload((PlayerNumber)netstate.my_id, GAMEPLAY_PACKET_BUNDLE, (const struct Packet *)send_buf, write_pos);
         if (payload_size > 0) {
             write_pos += payload_size;
         }
@@ -259,7 +259,12 @@ TbError process_network_message(NetUserId source, void *server_buf, size_t frame
         read_pos += 4;
         size_t payload_size = message_size - (read_pos - netstate.msg_buffer);
         if (message_type == NETMSG_GAMEPLAY_UNSEQUENCED) {
-            if (!gameplay_unpack_payload(read_pos, payload_size, (PlayerNumber)peer_id, player_frame, frame_size)) {
+            if (frame_size != sizeof(struct Packet)) {
+                WARNLOG("Gameplay frame size mismatch (%u != %u)", (unsigned)frame_size, (unsigned)sizeof(struct Packet));
+                invalidate_frame_message();
+                return Lb_OK;
+            }
+            if (!unpack_packet_payload(read_pos, payload_size, (PlayerNumber)peer_id, (struct Packet *)player_frame)) {
                 WARNLOG("Invalid gameplay packet bundle from peer %i (%u bytes)", peer_id, (unsigned)payload_size);
                 invalidate_frame_message();
                 return Lb_OK;
@@ -311,7 +316,7 @@ TbError process_network_message(NetUserId source, void *server_buf, size_t frame
     }
     if (message_type == NETMSG_GAMEPLAY_PACKET_HISTORY) {
         size_t payload_size = message_size - (read_pos - netstate.msg_buffer);
-        gameplay_read_history(source, read_pos, payload_size);
+        read_packet_history(source, read_pos, payload_size);
         return Lb_OK;
     }
     return Lb_OK;

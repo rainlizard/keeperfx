@@ -1765,8 +1765,8 @@ void process_packets(void)
             const char* player_name;
             if (player->packet_num == 0) {player_name = "Host";} else {player_name = "Client";}
             MULTIPLAYER_LOG("process_packets: SENDING packet[%s] turn=%lu checksum=%08lx", player_name, (unsigned long)my_packet->turn, (unsigned long)my_packet->checksum);
-            if (LbNetwork_ExchangeGameplay(my_packet, game.packets, sizeof(struct Packet)) != Lb_OK) {
-                ERRORLOG("LbNetwork_ExchangeGameplay failed");
+            if (LbNetwork_ExchangePackets(my_packet, game.packets, sizeof(struct Packet)) != Lb_OK) {
+                ERRORLOG("LbNetwork_ExchangePackets failed");
             }
         }
         process_disconnected_network_players();
