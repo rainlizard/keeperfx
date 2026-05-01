@@ -42,7 +42,6 @@ extern void network_yield_waiting_gameplay_packets(void);
 #define REDUNDANT_PACKET_BUNDLE 2
 
 struct PacketHistoryEntry {
-    GameTurn turn;
     TbBool valid;
     struct Packet packet;
 };
@@ -77,26 +76,6 @@ static TbBool is_history_player_valid(PlayerNumber player)
     return player >= 0 && player < MAX_N_USERS;
 }
 
-static TbBool is_newer_turn(GameTurn turn, GameTurn base_turn)
-{
-    return (GameTurnDelta)(turn - base_turn) > 0;
-}
-
-static int32_t find_oldest_history(const struct PacketHistory *history)
-{
-    int32_t oldest_index = -1;
-    for (int32_t i = 0; i < PACKET_HISTORY_SIZE; i += 1) {
-        const struct PacketHistoryEntry *entry = &history->entries[i];
-        if (!entry->valid) {
-            continue;
-        }
-        if (oldest_index < 0 || is_newer_turn(history->entries[oldest_index].turn, entry->turn)) {
-            oldest_index = i;
-        }
-    }
-    return oldest_index;
-}
-
 static void store_packet_history(PlayerNumber player, const struct Packet *packet)
 {
     if (!is_history_player_valid(player) || is_packet_empty(packet)) {
@@ -106,7 +85,7 @@ static void store_packet_history(PlayerNumber player, const struct Packet *packe
     struct PacketHistory *history = &packet_history[player];
     for (int i = 0; i < PACKET_HISTORY_SIZE; i += 1) {
         struct PacketHistoryEntry *entry = &history->entries[i];
-        if (entry->valid && entry->turn == packet->turn) {
+        if (entry->valid && entry->packet.turn == packet->turn) {
             memcpy(&entry->packet, packet, sizeof(struct Packet));
             return;
         }
@@ -114,14 +93,17 @@ static void store_packet_history(PlayerNumber player, const struct Packet *packe
 
     int32_t entry_index = history->next_index;
     if (history->valid_count >= PACKET_HISTORY_SIZE) {
-        entry_index = find_oldest_history(history);
-        if (entry_index < 0 || !is_newer_turn(packet->turn, history->entries[entry_index].turn)) {
+        for (int i = 1; i < PACKET_HISTORY_SIZE; i += 1) {
+            if ((GameTurnDelta)(history->entries[entry_index].packet.turn - history->entries[i].packet.turn) > 0) {
+                entry_index = i;
+            }
+        }
+        if ((GameTurnDelta)(packet->turn - history->entries[entry_index].packet.turn) <= 0) {
             return;
         }
     }
 
     struct PacketHistoryEntry *entry = &history->entries[entry_index];
-    entry->turn = packet->turn;
     entry->valid = true;
     memcpy(&entry->packet, packet, sizeof(struct Packet));
     history->next_index = (entry_index + 1) % PACKET_HISTORY_SIZE;
@@ -147,7 +129,7 @@ static size_t build_history_bundle(PlayerNumber player, struct RedundantPacketBu
         if (!entry->valid) {
             continue;
         }
-        if (first_packet != NULL && entry->turn == first_packet->turn) {
+        if (first_packet != NULL && entry->packet.turn == first_packet->turn) {
             continue;
         }
         packet_bundle->packets[packet_bundle->valid_count] = entry->packet;
@@ -170,7 +152,7 @@ static const struct Packet *find_history_packet(GameTurn turn, PlayerNumber play
     const struct PacketHistory *history = &packet_history[player];
     for (int i = 0; i < PACKET_HISTORY_SIZE; i += 1) {
         const struct PacketHistoryEntry *entry = &history->entries[i];
-        if (entry->valid && entry->turn == turn) {
+        if (entry->valid && entry->packet.turn == turn) {
             return &entry->packet;
         }
     }
