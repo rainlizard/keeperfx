@@ -37,7 +37,6 @@ extern void network_yield_waiting_gameplay_packets(void);
 
 #define PACKET_HISTORY_SIZE 32
 #define PACKET_HISTORY_INTERVAL_MS 500
-#define WAITING_HOST_RESEND_COOLDOWN_MS 500
 // Redundant packet value represents current packet + additional packets.
 #define REDUNDANT_PACKET_BUNDLE 2
 
@@ -441,7 +440,7 @@ TbError LbNetwork_ExchangeGameplay(void *send_buf, void *server_buf, size_t fram
                     if (turn_complete) {
                         break;
                     }
-                    if (netstate.my_id == SERVER_ID && send_due(&last_host_resend, WAITING_HOST_RESEND_COOLDOWN_MS)) {
+                    if (netstate.my_id == SERVER_ID && send_due(&last_host_resend, PACKET_HISTORY_INTERVAL_MS)) {
                         if (exchange_frame_message(send_buf, server_buf, frame_size, NETMSG_GAMEPLAY_UNSEQUENCED) != Lb_OK) {
                             return Lb_FAIL;
                         }
