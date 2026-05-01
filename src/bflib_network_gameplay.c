@@ -36,7 +36,7 @@ extern void network_yield_waiting_gameplay_packets(void);
 /******************************************************************************/
 
 #define PACKET_HISTORY_SIZE 32
-#define PACKET_HISTORY_INTERVAL_MS 500
+#define SEND_HISTORY_COOLDOWN_MS 500
 
 struct PacketHistoryEntry {
     TbBool valid;
@@ -275,7 +275,7 @@ static TbBool send_due(TbClockMSec *last_send_time, TbClockMSec interval)
     TbClockMSec current_time = LbTimerClock();
     if (*last_send_time == 0) {
         *last_send_time = current_time;
-        return false;
+        return true;
     }
     if (current_time - *last_send_time < interval) {
         return false;
@@ -334,7 +334,7 @@ static void send_history_to(NetUserId peer_id, PlayerNumber player, unsigned cha
 static void send_wait_history(void)
 {
     if (netstate.my_id != SERVER_ID) {
-        if (send_due(&last_packet_history_send, PACKET_HISTORY_INTERVAL_MS)) {
+        if (send_due(&last_packet_history_send, SEND_HISTORY_COOLDOWN_MS)) {
             PlayerNumber player = (PlayerNumber)netstate.my_id;
             if (is_history_player_valid(player)) {
                 send_history_to(SERVER_ID, player, PACKET_HISTORY_SIZE, NULL);
@@ -351,7 +351,7 @@ static void send_wait_history(void)
         return;
     }
 
-    TbClockMSec stagger_interval = PACKET_HISTORY_INTERVAL_MS / active_peers;
+    TbClockMSec stagger_interval = SEND_HISTORY_COOLDOWN_MS / active_peers;
     if (stagger_interval < 1) {
         stagger_interval = 1;
     }
@@ -419,7 +419,7 @@ TbError LbNetwork_ExchangeGameplay(void *send_buf, void *server_buf, size_t fram
                     if (turn_complete) {
                         break;
                     }
-                    if (netstate.my_id == SERVER_ID && send_due(&last_host_resend, PACKET_HISTORY_INTERVAL_MS)) {
+                    if (netstate.my_id == SERVER_ID && send_due(&last_host_resend, SEND_HISTORY_COOLDOWN_MS)) {
                         if (exchange_frame_message(send_buf, server_buf, frame_size, NETMSG_GAMEPLAY_UNSEQUENCED) != Lb_OK) {
                             return Lb_FAIL;
                         }
