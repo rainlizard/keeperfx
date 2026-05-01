@@ -39,7 +39,7 @@ extern void network_yield_draw_frontend(void);
 
 /******************************************************************************/
 
-// Duplicate packet value represents current packet + additional packets.
+// Bundle size counts the current packet plus older history packets.
 #define REDUNDANT_PACKET_BUNDLE 2
 #define SEND_DUPLICATE_PACKETS 3
 
@@ -126,13 +126,17 @@ TbError exchange_frame_message(void *send_buf, void *server_buf, size_t frame_si
         write_pos += 1;
         memcpy(write_pos, current_packet, sizeof(struct Packet));
         write_pos += sizeof(struct Packet);
-        if (current_packet->turn > 0) {
-            const struct Packet *previous_packet = get_history_packet((PlayerNumber)netstate.my_id, current_packet->turn - 1);
-            if (previous_packet != NULL) {
-                *packet_count = REDUNDANT_PACKET_BUNDLE;
-                memcpy(write_pos, previous_packet, sizeof(struct Packet));
-                write_pos += sizeof(struct Packet);
+        for (GameTurnDelta offset = 1; *packet_count < REDUNDANT_PACKET_BUNDLE; offset += 1) {
+            if ((GameTurn)offset > current_packet->turn) {
+                break;
             }
+            const struct Packet *history_packet = get_history_packet((PlayerNumber)netstate.my_id, current_packet->turn - offset);
+            if (history_packet == NULL) {
+                continue;
+            }
+            memcpy(write_pos, history_packet, sizeof(struct Packet));
+            write_pos += sizeof(struct Packet);
+            *packet_count += 1;
         }
     } else {
         memcpy(write_pos, send_buf, frame_size);
@@ -268,7 +272,7 @@ static TbError process_network_message(NetUserId source, void *server_buf, size_
             }
             unsigned char packet_count = *(const unsigned char *)read_pos;
             if (packet_count < 1 || packet_count > REDUNDANT_PACKET_BUNDLE
-             || payload_size < sizeof(unsigned char) + packet_count * sizeof(struct Packet)) {
+             || payload_size != sizeof(unsigned char) + packet_count * sizeof(struct Packet)) {
                 WARNLOG("Invalid gameplay packet bundle from peer %i (%u bytes)", peer_id, (unsigned)payload_size);
                 return ignore_frame();
             }
