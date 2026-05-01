@@ -27,7 +27,6 @@
 #include "net_game.h"
 #include "packets.h"
 #include "keeperfx.hpp"
-#include <stdlib.h>
 #include <zlib.h>
 #include "post_inc.h"
 
@@ -52,7 +51,6 @@ struct PacketHistoryHeader {
     PlayerNumber player;
     unsigned int compressed_length;
     unsigned int original_length;
-    unsigned int data_checksum;
 };
 #pragma pack()
 
@@ -194,14 +192,10 @@ TbBool read_packet_history(NetUserId source, const char *buffer, size_t buffer_s
 
     char packet_history_buffer[sizeof(struct RedundantPacketBundle)];
     uLongf packet_history_size = header.original_length;
-    int uncompress_result = uncompress((Bytef *)packet_history_buffer, &packet_history_size, (const Bytef *)(buffer + sizeof(struct PacketHistoryHeader)), header.compressed_length);
+    int uncompress_result = uncompress((Bytef *)packet_history_buffer, &packet_history_size,
+        (const Bytef *)(buffer + sizeof(struct PacketHistoryHeader)), header.compressed_length);
     if (uncompress_result != Z_OK || packet_history_size != header.original_length) {
         WARNLOG("Gameplay packet history decompression from peer %i failed: zlib error %d", source, uncompress_result);
-        return false;
-    }
-    uLong verify_crc = crc32(crc32(0L, Z_NULL, 0), (const Bytef *)packet_history_buffer, packet_history_size);
-    if ((unsigned int)verify_crc != header.data_checksum) {
-        WARNLOG("Gameplay packet history checksum mismatch from peer %i", source);
         return false;
     }
 
@@ -266,30 +260,22 @@ static void send_history_to(NetUserId peer_id, PlayerNumber player)
     if (packet_history_size == 0) {
         return;
     }
-    uLong data_crc = crc32(0L, Z_NULL, 0);
-    data_crc = crc32(data_crc, (const Bytef *)packet_history_buffer, packet_history_size);
-    size_t header_size = sizeof(unsigned char) + sizeof(struct PacketHistoryHeader);
-    uLongf compressed_size = compressBound(packet_history_size);
-    char *message_buffer = (char *)malloc(header_size + compressed_size);
-    if (message_buffer == NULL) {
-        ERRORLOG("Failed to allocate gameplay packet history message buffer");
-        return;
-    }
-    char *compressed_buffer = message_buffer + header_size;
-    int compress_result = compress((Bytef *)compressed_buffer, &compressed_size, (const Bytef *)packet_history_buffer, packet_history_size);
+
+    char *write_pos = begin_net_message(NETMSG_GAMEPLAY_PACKET_HISTORY);
+    struct PacketHistoryHeader *header = (struct PacketHistoryHeader *)write_pos;
+    write_pos += sizeof(struct PacketHistoryHeader);
+    uLongf compressed_size = sizeof(netstate.msg_buffer) - (write_pos - netstate.msg_buffer);
+    int compress_result = compress((Bytef *)write_pos, &compressed_size, (const Bytef *)packet_history_buffer, packet_history_size);
     if (compress_result != Z_OK) {
         ERRORLOG("Gameplay packet history compression failed for player %d: zlib error %d", (int)player, compress_result);
-        free(message_buffer);
         return;
     }
-    struct PacketHistoryHeader header = { (PlayerNumber)player, (unsigned int)compressed_size, (unsigned int)packet_history_size, (unsigned int)data_crc };
-    size_t message_size = header_size + compressed_size;
-    message_buffer[0] = NETMSG_GAMEPLAY_PACKET_HISTORY;
-    memcpy(message_buffer + sizeof(unsigned char), &header, sizeof(header));
+    header->player = player;
+    header->compressed_length = (unsigned int)compressed_size;
+    header->original_length = (unsigned int)packet_history_size;
     MULTIPLAYER_LOG("Sending reliable compressed gameplay packet history for player=%d to peer=%d (%lu -> %lu bytes)",
         (int)player, (int)peer_id, (unsigned long)packet_history_size, (unsigned long)compressed_size);
-    netstate.sp->sendmsg_single(peer_id, message_buffer, message_size);
-    free(message_buffer);
+    netstate.sp->sendmsg_single(peer_id, netstate.msg_buffer, (write_pos - netstate.msg_buffer) + compressed_size);
 }
 
 static void send_wait_history(void)
