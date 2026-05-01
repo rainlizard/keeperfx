@@ -500,7 +500,7 @@ void update_box_lag_compensation(struct PlayerInfo* player) {
     box_lag_compensation_y = 0;
     if (is_my_player(player)) {
         struct Packet* auth_pckt = get_packet_direct(player->packet_num);
-        struct Packet* visual_pckt = get_local_input_lag_packet_for_turn(get_gameturn());
+        const struct Packet *visual_pckt = get_history_packet(player->packet_num, get_gameturn());
         if (visual_pckt != NULL) {
             box_lag_compensation_x = coord_slab(auth_pckt->pos_x) - coord_slab(visual_pckt->pos_x);
             box_lag_compensation_y = coord_slab(auth_pckt->pos_y) - coord_slab(visual_pckt->pos_y);
@@ -1686,52 +1686,29 @@ static void process_disconnected_network_players(void)
     }
 }
 
-static void load_old_packets(PlayerNumber my_packet_num)
+static void load_old_packets(void)
 {
     GameTurn historical_turn = get_gameturn() - game.input_lag_turns;
-    const struct Packet* received_packets = get_received_turn_packets(historical_turn);
-    const char* received_packets_status;
-    if (received_packets != NULL) {
-        received_packets_status = "found";
-    } else {
-        received_packets_status = "NULL";
-    }
-    MULTIPLAYER_LOG("load_input_lag_packets: current_turn=%lu historical_turn=%lu received_packets=%s", (unsigned long)get_gameturn(), (unsigned long)historical_turn, received_packets_status);
+    MULTIPLAYER_LOG("load_input_lag_packets: current_turn=%lu historical_turn=%lu", (unsigned long)get_gameturn(), (unsigned long)historical_turn);
 
     for (int i = 0; i < PACKETS_COUNT; i++) {
-        const char* player_name;
-        if (i == 0) {player_name = "Host";} else {player_name = "Client";}
-
-        if (i == my_packet_num) {
-            struct Packet* local_packet = get_local_input_lag_packet_for_turn(historical_turn);
-            if (local_packet != NULL) {
-                game.packets[i] = *local_packet;
-            } else {
-                MULTIPLAYER_LOG("load_input_lag_packets: NOT FOUND - no local packet for historical_turn=%lu", (unsigned long)historical_turn);
-            }
+        const char* player_name = (i == 0) ? "Host" : "Client";
+        const struct Packet *packet = get_history_packet(i, historical_turn);
+        if (packet != NULL) {
+            game.packets[i] = *packet;
             if (i <= 1) {
                 if (is_packet_empty(&game.packets[i])) {
-                    MULTIPLAYER_LOG("load_input_lag_packets: loaded local packet[%s] is EMPTY", player_name);
+                    MULTIPLAYER_LOG("load_input_lag_packets: loaded packet[%s] is EMPTY", player_name);
                 } else {
-                    MULTIPLAYER_LOG("load_input_lag_packets: loaded local packet[%s] turn=%lu checksum=%08lx", player_name, (unsigned long)game.packets[i].turn, (unsigned long)game.packets[i].checksum);
+                    MULTIPLAYER_LOG("load_input_lag_packets: loaded packet[%s] turn=%lu checksum=%08lx", player_name, (unsigned long)game.packets[i].turn, (unsigned long)game.packets[i].checksum);
                 }
             }
-        } else {
-            if (received_packets != NULL) {
-                game.packets[i] = received_packets[i];
-                if (i <= 1) {
-                    if (is_packet_empty(&game.packets[i])) {
-                        MULTIPLAYER_LOG("load_input_lag_packets: loaded packet[%s] is EMPTY", player_name);
-                    } else {
-                        MULTIPLAYER_LOG("load_input_lag_packets: loaded packet[%s] turn=%lu checksum=%08lx", player_name, (unsigned long)game.packets[i].turn, (unsigned long)game.packets[i].checksum);
-                    }
-                }
-            } else {
-                memset(&game.packets[i], 0, sizeof(struct Packet));
-                if (i <= 1) {
-                    MULTIPLAYER_LOG("load_input_lag_packets: cleared packet[%s] (no received packets)", player_name);
-                }
-            }
+            continue;
+        }
+
+        memset(&game.packets[i], 0, sizeof(struct Packet));
+        if (i <= 1) {
+            MULTIPLAYER_LOG("load_input_lag_packets: cleared packet[%s] (no stored packet)", player_name);
         }
     }
 }
@@ -1755,7 +1732,7 @@ void process_packets(void)
     MULTIPLAYER_LOG("process_packets: === BEGIN turn=%lu ===", (unsigned long)get_gameturn());
     set_local_packet_turn();
     update_turn_checksums();
-    store_local_packet_in_input_lag_queue(player->packet_num);
+    store_packet_history(player->packet_num, get_packet_direct(player->packet_num));
 
     if (game.game_kind != GKind_LocalGame)
     {
@@ -1772,8 +1749,8 @@ void process_packets(void)
         process_disconnected_network_players();
     }
 
-    MULTIPLAYER_LOG("process_packets: Loading packets from input lag queue");
-    load_old_packets(player->packet_num);
+    MULTIPLAYER_LOG("process_packets: Loading packets from packet history");
+    load_old_packets();
 
     if (input_lag_skips_initial_processing())
     {

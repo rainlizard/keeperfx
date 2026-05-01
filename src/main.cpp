@@ -35,6 +35,7 @@
 #include "bflib_mshandler.hpp"
 #include "bflib_filelst.h"
 #include "bflib_network.h"
+#include "bflib_network_exchange.h"
 #include "net_resync.h"
 #include "bflib_planar.h"
 
@@ -1766,7 +1767,7 @@ void clear_game(void)
     init_animating_texture_maps();
     clear_slabsets();
     game.skip_initial_input_turns = 0;
-    clear_input_lag_queue();
+    initialize_packet_history();
 }
 
 void clear_game_for_save(void)
@@ -2054,7 +2055,10 @@ void set_mouse_light(struct PlayerInfo *player)
     SYNCDBG(6,"Starting");
     struct Packet *pckt;
     if (is_my_player(player)) {
-        pckt = get_local_input_lag_packet_for_turn(get_gameturn());
+        pckt = (struct Packet *)get_history_packet(player->packet_num, get_gameturn());
+        if (pckt == NULL) {
+            pckt = get_packet_direct(player->packet_num);
+        }
     } else {
         pckt = get_packet_direct(player->packet_num);
     }

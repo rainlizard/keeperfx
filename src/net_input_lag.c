@@ -20,36 +20,10 @@
 extern "C" {
 #endif
 
-static struct Packet local_input_lag_packets[MAXIMUM_INPUT_LAG_TURNS + 1];
-
 enum InputLagMode {
     INPUT_LAG_MODE_ONE_VS_ONE = 0,
     INPUT_LAG_MODE_RELAY,
 };
-
-void store_local_packet_in_input_lag_queue(PlayerNumber my_packet_num) {
-    if (game.input_lag_turns + 1 <= 0) {
-        return;
-    }
-    int slot = get_gameturn() % (game.input_lag_turns + 1);
-    local_input_lag_packets[slot] = game.packets[my_packet_num];
-    const char* player_name;
-    if (my_packet_num == 0) {player_name = "Host";} else {player_name = "Client";}
-    MULTIPLAYER_LOG("store_local_packet_in_input_lag_queue: STORING local packet[%s] turn=%lu checksum=%08lx into queue slot %d", player_name, (unsigned long)game.packets[my_packet_num].turn, (unsigned long)game.packets[my_packet_num].checksum, slot);
-}
-
-struct Packet* get_local_input_lag_packet_for_turn(GameTurn target_turn)
-{
-    for (int i = 0; i < MAXIMUM_INPUT_LAG_TURNS + 1; i++) {
-        struct Packet* packet = &local_input_lag_packets[i];
-        if (!is_packet_empty(packet) && packet->turn == target_turn) {
-            MULTIPLAYER_LOG("get_local_input_lag_packet_for_turn: found packet for turn=%lu in slot %d", (unsigned long)target_turn, i);
-            return packet;
-        }
-    }
-    MULTIPLAYER_LOG("get_local_input_lag_packet_for_turn: no packet found for turn=%lu", (unsigned long)target_turn);
-    return NULL;
-}
 
 TbBool input_lag_skips_initial_processing(void) {
     if ((game.operation_flags & GOF_Paused) != 0 && game.game_kind != GKind_LocalGame) {return true;}
@@ -68,10 +42,6 @@ unsigned short calculate_skip_input(void) {
         return game.input_lag_turns + heartZoomTime;
     }
     return game.input_lag_turns + (game_num_fps * 0.25);
-}
-
-void clear_input_lag_queue(void) {
-    memset(local_input_lag_packets, 0, sizeof(local_input_lag_packets));
 }
 
 void LbNetwork_UpdateInputLagIfHost(void) {

@@ -335,7 +335,6 @@ void resync_game(void) {
 
     game.skip_initial_input_turns = calculate_skip_input();
     initialize_packet_history();
-    clear_input_lag_queue();
     NETLOG("Input lag after resync: %d turns", game.input_lag_turns);
 
     clear_flag(game.system_flags, GSF_NetGameNoSync);

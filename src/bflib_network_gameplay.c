@@ -61,7 +61,7 @@ static TbClockMSec last_packet_history_send;
 static TbClockMSec last_host_resend;
 static NetUserId next_history_peer;
 
-static void store_packet_history(PlayerNumber player, const struct Packet *packet)
+void store_packet_history(PlayerNumber player, const struct Packet *packet)
 {
     if (player < 0 || player >= MAX_N_USERS || is_packet_empty(packet)) {
         return;
@@ -72,6 +72,19 @@ static void store_packet_history(PlayerNumber player, const struct Packet *packe
         return;
     }
     *entry = *packet;
+}
+
+const struct Packet *get_history_packet(PlayerNumber player, GameTurn turn)
+{
+    if (player < 0 || player >= MAX_N_USERS) {
+        return NULL;
+    }
+
+    const struct Packet *packet = &packet_history[player].entries[turn % PACKET_HISTORY_SIZE];
+    if (is_packet_empty(packet) || packet->turn != turn) {
+        return NULL;
+    }
+    return packet;
 }
 
 size_t build_packet_payload(PlayerNumber player, unsigned char packet_count, const struct Packet *first_packet, void *buffer)
@@ -120,9 +133,6 @@ size_t build_packet_payload(PlayerNumber player, unsigned char packet_count, con
         }
         packet_bundle->packets[packet_bundle->valid_count] = *packet;
         packet_bundle->valid_count += 1;
-    }
-    if (first_packet != NULL) {
-        store_packet_history(player, first_packet);
     }
     if (packet_bundle->valid_count > 0) {
         return sizeof(unsigned char) + packet_bundle->valid_count * sizeof(struct Packet);
@@ -209,33 +219,12 @@ void initialize_packet_history(void)
     next_history_peer = SERVER_ID;
 }
 
-const struct Packet *get_received_turn_packets(GameTurn turn)
-{
-    static struct Packet packets_for_turn[PACKETS_COUNT];
-    TbBool found = false;
-    memset(packets_for_turn, 0, sizeof(packets_for_turn));
-
-    for (PlayerNumber player = 0; player < NET_PLAYERS_COUNT; player += 1) {
-        const struct Packet *packet = &packet_history[player].entries[turn % PACKET_HISTORY_SIZE];
-        if (is_packet_empty(packet) || packet->turn != turn) {
-            continue;
-        }
-        packets_for_turn[player] = *packet;
-        found = true;
-    }
-    if (found) {
-        return packets_for_turn;
-    }
-    return NULL;
-}
-
 static TbBool have_all_turn_packets(PlayerNumber local_packet_player)
 {
     GameTurn expected_turn = get_gameturn() - game.input_lag_turns;
     for (PlayerNumber player = 0; player < NET_PLAYERS_COUNT; player += 1) {
-        const struct Packet *packet = &packet_history[player].entries[expected_turn % PACKET_HISTORY_SIZE];
-        if (player != local_packet_player && network_player_active(player)
-            && (is_packet_empty(packet) || packet->turn != expected_turn)) {
+        const struct Packet *packet = get_history_packet(player, expected_turn);
+        if (player != local_packet_player && network_player_active(player) && packet == NULL) {
             return false;
         }
     }
@@ -266,14 +255,14 @@ static TbBool host_lost(GameTurn turn, const char *state)
     return true;
 }
 
-static void send_history_to(NetUserId peer_id, PlayerNumber player, const struct Packet *first_packet)
+static void send_history_to(NetUserId peer_id, PlayerNumber player)
 {
     if (!can_send_to_peer(peer_id)) {
         return;
     }
 
     char packet_history_buffer[sizeof(struct RedundantPacketBundle)];
-    size_t packet_history_size = build_packet_payload(player, PACKET_HISTORY_SIZE, first_packet, packet_history_buffer);
+    size_t packet_history_size = build_packet_payload(player, PACKET_HISTORY_SIZE, NULL, packet_history_buffer);
     if (packet_history_size == 0) {
         return;
     }
@@ -309,7 +298,7 @@ static void send_wait_history(void)
         if (send_due(&last_packet_history_send, SEND_HISTORY_COOLDOWN_MS)) {
             PlayerNumber player = (PlayerNumber)netstate.my_id;
             if (player >= 0 && player < MAX_N_USERS) {
-                send_history_to(SERVER_ID, player, NULL);
+                send_history_to(SERVER_ID, player);
             }
         }
         return;
@@ -341,7 +330,7 @@ static void send_wait_history(void)
             if (player == peer_id || !network_player_active(player)) {
                 continue;
             }
-            send_history_to(peer_id, player, NULL);
+            send_history_to(peer_id, player);
         }
         return;
     }
@@ -376,11 +365,11 @@ TbError LbNetwork_ExchangePackets(void *send_buf, void *server_buf, size_t frame
                     }
                     turn_complete = have_all_turn_packets(local_packet_player);
                     for (NetUserId peer_id = 0; peer_id < netstate.max_players && !turn_complete; peer_id += 1) {
-                        const struct Packet *packet = &packet_history[peer_id].entries[expected_turn % PACKET_HISTORY_SIZE];
+                        const struct Packet *packet = get_history_packet(peer_id, expected_turn);
                         if (!can_send_to_peer(peer_id)) {
                             continue;
                         }
-                        if (netstate.my_id == SERVER_ID && !is_packet_empty(packet) && packet->turn == expected_turn) {
+                        if (netstate.my_id == SERVER_ID && packet != NULL) {
                             continue;
                         }
                         process_peer_msgs(peer_id, server_buf, frame_size);
