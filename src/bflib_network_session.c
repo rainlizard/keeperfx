@@ -40,6 +40,7 @@ extern void network_yield_draw_frontend(void);
 /******************************************************************************/
 
 // Duplicate packet value represents current packet + additional packets.
+#define GAMEPLAY_PACKET_BUNDLE 2
 #define SEND_DUPLICATE_PACKETS 3
 
 static TbBool read_msg_text(char **read_pos, const char **text, size_t max_len)
