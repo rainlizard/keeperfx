@@ -126,9 +126,18 @@ TbError exchange_frame_message(void *send_buf, void *server_buf, size_t frame_si
     *(int *)write_pos = netstate.seq_nbr;
     write_pos += 4;
     if (msg_type == NETMSG_GAMEPLAY_UNSEQUENCED) {
-        size_t payload_size = build_packet_payload((PlayerNumber)netstate.my_id, GAMEPLAY_PACKET_BUNDLE, (const struct Packet *)send_buf, write_pos);
-        if (payload_size > 0) {
-            write_pos += payload_size;
+        const struct Packet *current_packet = (const struct Packet *)send_buf;
+        *(unsigned char *)write_pos = 1;
+        write_pos += 1;
+        memcpy(write_pos, current_packet, sizeof(struct Packet));
+        write_pos += sizeof(struct Packet);
+        if (current_packet->turn > 0) {
+            const struct Packet *previous_packet = get_history_packet((PlayerNumber)netstate.my_id, current_packet->turn - 1);
+            if (previous_packet != NULL) {
+                *(unsigned char *)(write_pos - sizeof(struct Packet) - 1) = 2;
+                memcpy(write_pos, previous_packet, sizeof(struct Packet));
+                write_pos += sizeof(struct Packet);
+            }
         }
     } else {
         memcpy(write_pos, send_buf, frame_size);
@@ -264,11 +273,28 @@ TbError process_network_message(NetUserId source, void *server_buf, size_t frame
                 invalidate_frame_message();
                 return Lb_OK;
             }
-            if (!unpack_packet_payload(read_pos, payload_size, (PlayerNumber)peer_id, (struct Packet *)player_frame)) {
+            if (payload_size < sizeof(unsigned char)) {
                 WARNLOG("Invalid gameplay packet bundle from peer %i (%u bytes)", peer_id, (unsigned)payload_size);
                 invalidate_frame_message();
                 return Lb_OK;
             }
+            unsigned char packet_count = *(const unsigned char *)read_pos;
+            if (packet_count < 1 || packet_count > GAMEPLAY_PACKET_BUNDLE
+             || payload_size < sizeof(unsigned char) + packet_count * sizeof(struct Packet)) {
+                WARNLOG("Invalid gameplay packet bundle from peer %i (%u bytes)", peer_id, (unsigned)payload_size);
+                invalidate_frame_message();
+                return Lb_OK;
+            }
+            read_pos += 1;
+            const struct Packet *packets = (const struct Packet *)read_pos;
+            for (unsigned char i = 0; i < packet_count; i += 1) {
+                if (is_packet_empty(&packets[i])) {
+                    MULTIPLAYER_LOG("process_network_message: Skipping empty packet for player %d turn %lu", peer_id, (unsigned long)packets[i].turn);
+                    continue;
+                }
+                store_packet_history((PlayerNumber)peer_id, &packets[i]);
+            }
+            *(struct Packet *)player_frame = packets[0];
         } else {
             if (payload_size != frame_size) {
                 WARNLOG("Ignoring frame message type %d from peer %i with %u bytes, expected %u bytes",

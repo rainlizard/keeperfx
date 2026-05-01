@@ -85,85 +85,6 @@ const struct Packet *get_history_packet(PlayerNumber player, GameTurn turn)
     return packet;
 }
 
-size_t build_packet_payload(PlayerNumber player, unsigned char packet_count, const struct Packet *first_packet, void *buffer)
-{
-    struct RedundantPacketBundle *packet_bundle = (struct RedundantPacketBundle *)buffer;
-    packet_bundle->valid_count = 0;
-    if (player < 0 || player >= MAX_N_USERS || packet_count < 1) {
-        return 0;
-    }
-
-    const struct PacketHistory *history = &packet_history[player];
-    GameTurn latest_turn = 0;
-    GameTurnDelta start_offset = 0;
-    TbBool have_turn = false;
-
-    if (first_packet != NULL) {
-        packet_bundle->packets[0] = *first_packet;
-        packet_bundle->valid_count = 1;
-        latest_turn = first_packet->turn;
-        start_offset = 1;
-        have_turn = true;
-    } else {
-        for (int i = 0; i < PACKET_HISTORY_SIZE; i += 1) {
-            const struct Packet *packet = &history->entries[i];
-            if (is_packet_empty(packet)) {
-                continue;
-            }
-            if (!have_turn || (GameTurnDelta)(packet->turn - latest_turn) > 0) {
-                latest_turn = packet->turn;
-                have_turn = true;
-            }
-        }
-        if (!have_turn) {
-            return 0;
-        }
-    }
-
-    for (GameTurnDelta offset = start_offset; offset < PACKET_HISTORY_SIZE && packet_bundle->valid_count < packet_count; offset += 1) {
-        if ((GameTurn)offset > latest_turn) {
-            break;
-        }
-        GameTurn turn = latest_turn - offset;
-        const struct Packet *packet = &history->entries[turn % PACKET_HISTORY_SIZE];
-        if (is_packet_empty(packet) || packet->turn != turn) {
-            continue;
-        }
-        packet_bundle->packets[packet_bundle->valid_count] = *packet;
-        packet_bundle->valid_count += 1;
-    }
-    if (packet_bundle->valid_count > 0) {
-        return sizeof(unsigned char) + packet_bundle->valid_count * sizeof(struct Packet);
-    }
-    return 0;
-}
-
-TbBool unpack_packet_payload(const char *buffer, size_t buffer_size, PlayerNumber player, struct Packet *out_packet)
-{
-    if (player < 0 || player >= MAX_N_USERS || buffer_size < sizeof(unsigned char)) {
-        return false;
-    }
-    const struct RedundantPacketBundle *packet_bundle = (const struct RedundantPacketBundle *)buffer;
-    if (packet_bundle->valid_count < 1 || packet_bundle->valid_count > PACKET_HISTORY_SIZE) {
-        return false;
-    }
-    if (buffer_size < sizeof(unsigned char) + packet_bundle->valid_count * sizeof(struct Packet)) {
-        return false;
-    }
-    for (unsigned char i = 0; i < packet_bundle->valid_count; i += 1) {
-        const struct Packet *packet = &packet_bundle->packets[i];
-        if (is_packet_empty(packet)) {
-            MULTIPLAYER_LOG("unpack_history_bundle: Skipping empty packet for player %d turn %lu", player, (unsigned long)packet->turn);
-            continue;
-        }
-        store_packet_history(player, packet);
-    }
-    if (out_packet != NULL) {
-        *out_packet = packet_bundle->packets[0];
-    }
-    return true;
-}
-
 TbBool read_packet_history(NetUserId source, const char *buffer, size_t buffer_size)
 {
     if (buffer_size < sizeof(struct PacketHistoryHeader)) {
@@ -199,9 +120,22 @@ TbBool read_packet_history(NetUserId source, const char *buffer, size_t buffer_s
         return false;
     }
 
-    if (!unpack_packet_payload(packet_history_buffer, header.original_length, header.player, NULL)) {
-        WARNLOG("Gameplay packet history from peer %i could not be stored for player %d", source, (int)header.player);
+    const struct RedundantPacketBundle *packet_bundle = (const struct RedundantPacketBundle *)packet_history_buffer;
+    if (packet_bundle->valid_count < 1 || packet_bundle->valid_count > PACKET_HISTORY_SIZE) {
+        WARNLOG("Gameplay packet history from peer %i had invalid packet count %u", source, (unsigned)packet_bundle->valid_count);
         return false;
+    }
+    if (header.original_length < sizeof(unsigned char) + packet_bundle->valid_count * sizeof(struct Packet)) {
+        WARNLOG("Gameplay packet history from peer %i was truncated for player %d", source, (int)header.player);
+        return false;
+    }
+    for (unsigned char i = 0; i < packet_bundle->valid_count; i += 1) {
+        const struct Packet *packet = &packet_bundle->packets[i];
+        if (is_packet_empty(packet)) {
+            MULTIPLAYER_LOG("read_packet_history: Skipping empty packet for player %d turn %lu", header.player, (unsigned long)packet->turn);
+            continue;
+        }
+        store_packet_history(header.player, packet);
     }
     return true;
 }
@@ -254,18 +188,48 @@ static void send_history_to(NetUserId peer_id, PlayerNumber player)
     if (!can_send_to_peer(peer_id)) {
         return;
     }
-
-    char packet_history_buffer[sizeof(struct RedundantPacketBundle)];
-    size_t packet_history_size = build_packet_payload(player, PACKET_HISTORY_SIZE, NULL, packet_history_buffer);
-    if (packet_history_size == 0) {
+    if (player < 0 || player >= MAX_N_USERS) {
         return;
     }
+
+    struct RedundantPacketBundle packet_bundle;
+    packet_bundle.valid_count = 0;
+
+    const struct PacketHistory *history = &packet_history[player];
+    GameTurn latest_turn = 0;
+    TbBool have_turn = false;
+    for (int i = 0; i < PACKET_HISTORY_SIZE; i += 1) {
+        const struct Packet *packet = &history->entries[i];
+        if (is_packet_empty(packet)) {
+            continue;
+        }
+        if (!have_turn || (GameTurnDelta)(packet->turn - latest_turn) > 0) {
+            latest_turn = packet->turn;
+            have_turn = true;
+        }
+    }
+    if (!have_turn) {
+        return;
+    }
+    for (GameTurnDelta offset = 0; offset < PACKET_HISTORY_SIZE; offset += 1) {
+        if ((GameTurn)offset > latest_turn) {
+            break;
+        }
+        GameTurn turn = latest_turn - offset;
+        const struct Packet *packet = &history->entries[turn % PACKET_HISTORY_SIZE];
+        if (is_packet_empty(packet) || packet->turn != turn) {
+            continue;
+        }
+        packet_bundle.packets[packet_bundle.valid_count] = *packet;
+        packet_bundle.valid_count += 1;
+    }
+    size_t packet_history_size = sizeof(unsigned char) + packet_bundle.valid_count * sizeof(struct Packet);
 
     char *write_pos = begin_net_message(NETMSG_GAMEPLAY_PACKET_HISTORY);
     struct PacketHistoryHeader *header = (struct PacketHistoryHeader *)write_pos;
     write_pos += sizeof(struct PacketHistoryHeader);
     uLongf compressed_size = sizeof(netstate.msg_buffer) - (write_pos - netstate.msg_buffer);
-    int compress_result = compress((Bytef *)write_pos, &compressed_size, (const Bytef *)packet_history_buffer, packet_history_size);
+    int compress_result = compress((Bytef *)write_pos, &compressed_size, (const Bytef *)&packet_bundle, packet_history_size);
     if (compress_result != Z_OK) {
         ERRORLOG("Gameplay packet history compression failed for player %d: zlib error %d", (int)player, compress_result);
         return;
