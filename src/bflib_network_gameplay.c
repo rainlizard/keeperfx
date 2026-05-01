@@ -82,11 +82,6 @@ static TbBool is_newer_turn(GameTurn turn, GameTurn base_turn)
     return (GameTurnDelta)(turn - base_turn) > 0;
 }
 
-static size_t packet_bundle_size(unsigned char valid_count)
-{
-    return sizeof(unsigned char) + valid_count * sizeof(struct Packet);
-}
-
 static int32_t find_oldest_history(const struct PacketHistory *history)
 {
     int32_t oldest_index = -1;
@@ -120,10 +115,7 @@ static void store_packet_history(PlayerNumber player, const struct Packet *packe
     int32_t entry_index = history->next_index;
     if (history->valid_count >= PACKET_HISTORY_SIZE) {
         entry_index = find_oldest_history(history);
-        if (entry_index < 0) {
-            return;
-        }
-        if (!is_newer_turn(packet->turn, history->entries[entry_index].turn)) {
+        if (entry_index < 0 || !is_newer_turn(packet->turn, history->entries[entry_index].turn)) {
             return;
         }
     }
@@ -149,9 +141,7 @@ static size_t build_history_bundle(PlayerNumber player, struct RedundantPacketBu
         packet_bundle->packets[0] = *first_packet;
         packet_bundle->valid_count = 1;
     }
-    unsigned char copied_count = 0;
-    unsigned char remaining_packets = packet_count - packet_bundle->valid_count;
-    for (unsigned char i = 0; i < history->valid_count && copied_count < remaining_packets; i += 1) {
+    for (unsigned char i = 0; i < history->valid_count && packet_bundle->valid_count < packet_count; i += 1) {
         int32_t history_index = (history->next_index + PACKET_HISTORY_SIZE - i - 1) % PACKET_HISTORY_SIZE;
         const struct PacketHistoryEntry *entry = &history->entries[history_index];
         if (!entry->valid) {
@@ -160,15 +150,14 @@ static size_t build_history_bundle(PlayerNumber player, struct RedundantPacketBu
         if (first_packet != NULL && entry->turn == first_packet->turn) {
             continue;
         }
-        packet_bundle->packets[packet_bundle->valid_count + copied_count] = entry->packet;
-        copied_count += 1;
+        packet_bundle->packets[packet_bundle->valid_count] = entry->packet;
+        packet_bundle->valid_count += 1;
     }
-    packet_bundle->valid_count += copied_count;
     if (first_packet != NULL) {
         store_packet_history(player, first_packet);
     }
     if (packet_bundle->valid_count > 0) {
-        return packet_bundle_size(packet_bundle->valid_count);
+        return sizeof(unsigned char) + packet_bundle->valid_count * sizeof(struct Packet);
     }
     return 0;
 }
@@ -201,7 +190,7 @@ static TbBool unpack_history_bundle(const char *buffer, size_t buffer_size, Play
     if (packet_bundle->valid_count < 1 || packet_bundle->valid_count > PACKET_HISTORY_SIZE) {
         return false;
     }
-    if (buffer_size < packet_bundle_size(packet_bundle->valid_count)) {
+    if (buffer_size < sizeof(unsigned char) + packet_bundle->valid_count * sizeof(struct Packet)) {
         return false;
     }
     for (unsigned char i = 0; i < packet_bundle->valid_count; i += 1) {
@@ -255,15 +244,13 @@ TbBool gameplay_read_history(NetUserId source, const char *buffer, size_t buffer
     }
 
     char packet_history_buffer[sizeof(struct RedundantPacketBundle)];
-    const char *compressed_buffer = buffer + sizeof(struct PacketHistoryHeader);
     uLongf packet_history_size = header.original_length;
-    int uncompress_result = uncompress((Bytef *)packet_history_buffer, &packet_history_size, (const Bytef *)compressed_buffer, header.compressed_length);
+    int uncompress_result = uncompress((Bytef *)packet_history_buffer, &packet_history_size, (const Bytef *)(buffer + sizeof(struct PacketHistoryHeader)), header.compressed_length);
     if (uncompress_result != Z_OK || packet_history_size != header.original_length) {
         WARNLOG("Gameplay packet history decompression from peer %i failed: zlib error %d", source, uncompress_result);
         return false;
     }
-    uLong verify_crc = crc32(0L, Z_NULL, 0);
-    verify_crc = crc32(verify_crc, (const Bytef *)packet_history_buffer, packet_history_size);
+    uLong verify_crc = crc32(crc32(0L, Z_NULL, 0), (const Bytef *)packet_history_buffer, packet_history_size);
     if ((unsigned int)verify_crc != header.data_checksum) {
         WARNLOG("Gameplay packet history checksum mismatch from peer %i", source);
         return false;
@@ -352,8 +339,7 @@ static void send_history_to(NetUserId peer_id, PlayerNumber player, unsigned cha
     data_crc = crc32(data_crc, (const Bytef *)packet_history_buffer, packet_history_size);
     size_t header_size = sizeof(unsigned char) + sizeof(struct PacketHistoryHeader);
     uLongf compressed_size = compressBound(packet_history_size);
-    size_t max_message_size = header_size + compressed_size;
-    char *message_buffer = (char *)malloc(max_message_size);
+    char *message_buffer = (char *)malloc(header_size + compressed_size);
     if (message_buffer == NULL) {
         ERRORLOG("Failed to allocate gameplay packet history message buffer");
         return;
@@ -484,10 +470,8 @@ TbError LbNetwork_ExchangeGameplay(void *send_buf, void *server_buf, size_t fram
                         return Lb_OK;
                     }
                 }
-                if (turn_complete) {
-                    int32_t elapsed = LbTimerClock() - wait_start_time;
-                    MULTIPLAYER_LOG("LbNetwork_ExchangeGameplay: Completed wait for turn=%lu after %dms", (unsigned long)expected_turn, elapsed);
-                }
+                int32_t elapsed = LbTimerClock() - wait_start_time;
+                MULTIPLAYER_LOG("LbNetwork_ExchangeGameplay: Completed wait for turn=%lu after %dms", (unsigned long)expected_turn, elapsed);
             }
         }
     }
