@@ -3265,8 +3265,8 @@ TbBool keeper_screen_swap(void)
  * Waits until the next game turn. Delay is usually controlled by
  * num_fps variable.
  */
-extern "C" int32_t sync_mp_client_ns;
-int32_t sync_mp_client_ns;
+extern "C" int32_t sync_multiplayer_turn_ns;
+int32_t sync_multiplayer_turn_ns;
 
 TbBool keeper_wait_for_next_turn(void)
 {
@@ -3293,9 +3293,9 @@ TbBool keeper_wait_for_next_turn(void)
         long double tick_ns_cur = get_time_tick_ns();
         long double tick_ns_used = tick_ns_cur - tick_ns_last_turn;
         long double tick_ns_delay = tick_ns_one_frame - tick_ns_used;
-        if (sync_mp_client_ns != 0) {
-            tick_ns_delay += sync_mp_client_ns;
-            sync_mp_client_ns = 0;
+        if (sync_multiplayer_turn_ns != 0) {
+            tick_ns_delay += sync_multiplayer_turn_ns;
+            sync_multiplayer_turn_ns = 0;
         }
 
         long double tick_ns_end = tick_ns_cur;
@@ -3522,9 +3522,9 @@ void gameplay_loop_timestep()
     frametime_start_measurement(Frametime_Sleep);
     if (is_feature_on(Ft_DeltaTime) == true) {
         game.delta_time = get_delta_time();
-        if (sync_mp_client_ns != 0) {
-            game.delta_time -= ((float)sync_mp_client_ns / 1000000000.0f) * game_num_fps;
-            sync_mp_client_ns = 0;
+        if (sync_multiplayer_turn_ns != 0) {
+            game.delta_time -= ((float)sync_multiplayer_turn_ns / 1000000000.0f) * game_num_fps;
+            sync_multiplayer_turn_ns = 0;
         }
         game.process_turn_time += game.delta_time;
     } else {

@@ -31,7 +31,7 @@
 #include "post_inc.h"
 
 extern void network_yield_waiting_gameplay_packets(void);
-extern int32_t sync_mp_client_ns;
+extern int32_t sync_multiplayer_turn_ns;
 
 /******************************************************************************/
 
@@ -138,6 +138,7 @@ TbBool read_packet_history(NetUserId source, const char *buffer, size_t buffer_s
         }
         store_packet_history(header.player, packet);
     }
+    sync_multiplayer_turn_ns = -1000000;
     return true;
 }
 
@@ -306,6 +307,7 @@ TbError LbNetwork_ExchangePackets(void *send_buf, void *server_buf, size_t frame
                 GameTurn expected_turn = get_gameturn() - game.input_lag_turns;
                 TbClockMSec wait_start_time = LbTimerClock();
                 TbBool turn_complete = false;
+                sync_multiplayer_turn_ns = 1000000;
                 MULTIPLAYER_LOG("LbNetwork_ExchangePackets: Missing packets for turn=%lu, collecting...", (unsigned long)expected_turn);
 
                 while (!turn_complete) {
@@ -343,12 +345,7 @@ TbError LbNetwork_ExchangePackets(void *send_buf, void *server_buf, size_t frame
                         return Lb_OK;
                     }
                 }
-                if (netstate.my_id != SERVER_ID) {
-                    sync_mp_client_ns = 1000000;
-                }
                 MULTIPLAYER_LOG("LbNetwork_ExchangePackets: Completed wait for turn=%lu after %dms", (unsigned long)expected_turn, (int32_t)(LbTimerClock() - wait_start_time));
-            } else if (netstate.my_id != SERVER_ID) {
-                sync_mp_client_ns = -1000000;
             }
         }
     }
