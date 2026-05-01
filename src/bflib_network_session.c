@@ -121,14 +121,15 @@ TbError exchange_frame_message(void *send_buf, void *server_buf, size_t frame_si
     write_pos += 4;
     if (msg_type == NETMSG_GAMEPLAY_UNSEQUENCED) {
         const struct Packet *current_packet = (const struct Packet *)send_buf;
-        *(unsigned char *)write_pos = 1;
+        unsigned char *packet_count = (unsigned char *)write_pos;
+        *packet_count = 1;
         write_pos += 1;
         memcpy(write_pos, current_packet, sizeof(struct Packet));
         write_pos += sizeof(struct Packet);
         if (current_packet->turn > 0) {
             const struct Packet *previous_packet = get_history_packet((PlayerNumber)netstate.my_id, current_packet->turn - 1);
             if (previous_packet != NULL) {
-                *(unsigned char *)(write_pos - sizeof(struct Packet) - 1) = 2;
+                *packet_count = GAMEPLAY_PACKET_BUNDLE;
                 memcpy(write_pos, previous_packet, sizeof(struct Packet));
                 write_pos += sizeof(struct Packet);
             }
