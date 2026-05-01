@@ -387,11 +387,21 @@ static void send_history_to(NetUserId peer_id, PlayerNumber player, unsigned cha
 
 static void send_full_history(NetUserId peer_id)
 {
-    PlayerNumber player = (PlayerNumber)netstate.my_id;
-    if (!is_history_player_valid(player)) {
+    if (netstate.my_id != SERVER_ID) {
+        PlayerNumber player = (PlayerNumber)netstate.my_id;
+        if (!is_history_player_valid(player)) {
+            return;
+        }
+        send_history_to(peer_id, player, PACKET_HISTORY_SIZE, NULL);
         return;
     }
-    send_history_to(peer_id, player, PACKET_HISTORY_SIZE, NULL);
+
+    for (PlayerNumber player = 0; player < netstate.max_players; player += 1) {
+        if (player == peer_id || !network_player_active(player)) {
+            continue;
+        }
+        send_history_to(peer_id, player, PACKET_HISTORY_SIZE, NULL);
+    }
 }
 
 static void send_wait_history(void)
@@ -478,10 +488,6 @@ TbError LbNetwork_ExchangeGameplay(void *send_buf, void *server_buf, size_t fram
                         }
                     }
                     if (turn_complete) {
-                        break;
-                    }
-                    if ((LbTimerClock() - wait_start_time) >= TIMEOUT_GAMEPLAY_MISSING_PACKET) {
-                        MULTIPLAYER_LOG("LbNetwork_ExchangeGameplay: Missing packets remained for turn=%lu after collection", (unsigned long)expected_turn);
                         break;
                     }
                     if (netstate.my_id == SERVER_ID && send_due(&last_host_resend, WAITING_HOST_RESEND_COOLDOWN_MS)) {
