@@ -37,8 +37,6 @@ extern void network_yield_waiting_gameplay_packets(void);
 
 #define PACKET_HISTORY_SIZE 32
 #define PACKET_HISTORY_INTERVAL_MS 500
-// Redundant packet value represents current packet + additional packets.
-#define REDUNDANT_PACKET_BUNDLE 2
 
 struct PacketHistoryEntry {
     TbBool valid;
@@ -111,8 +109,9 @@ static void store_packet_history(PlayerNumber player, const struct Packet *packe
     }
 }
 
-static size_t build_history_bundle(PlayerNumber player, struct RedundantPacketBundle *packet_bundle, unsigned char packet_count, const struct Packet *first_packet)
+size_t gameplay_build_payload(PlayerNumber player, unsigned char packet_count, const struct Packet *first_packet, void *buffer)
 {
+    struct RedundantPacketBundle *packet_bundle = (struct RedundantPacketBundle *)buffer;
     packet_bundle->valid_count = 0;
     if (!is_history_player_valid(player) || packet_count < 1) {
         return 0;
@@ -158,7 +157,7 @@ static const struct Packet *find_history_packet(GameTurn turn, PlayerNumber play
     return NULL;
 }
 
-static TbBool unpack_history_bundle(const char *buffer, size_t buffer_size, PlayerNumber player, void *out_packet, size_t packet_size)
+TbBool gameplay_unpack_payload(const char *buffer, size_t buffer_size, PlayerNumber player, void *out_packet, size_t packet_size)
 {
     if (out_packet != NULL && packet_size != sizeof(struct Packet)) {
         WARNLOG("Gameplay packet bundle size mismatch (%u != %u)", (unsigned)packet_size, (unsigned)sizeof(struct Packet));
@@ -186,16 +185,6 @@ static TbBool unpack_history_bundle(const char *buffer, size_t buffer_size, Play
         memcpy(out_packet, &packet_bundle->packets[0], packet_size);
     }
     return true;
-}
-
-size_t gameplay_build_payload(PlayerNumber player, const struct Packet *first_packet, void *buffer)
-{
-    return build_history_bundle(player, (struct RedundantPacketBundle *)buffer, REDUNDANT_PACKET_BUNDLE, first_packet);
-}
-
-TbBool gameplay_unpack_payload(const char *buffer, size_t buffer_size, PlayerNumber player, void *out_packet, size_t packet_size)
-{
-    return unpack_history_bundle(buffer, buffer_size, player, out_packet, packet_size);
 }
 
 TbBool gameplay_read_history(NetUserId source, const char *buffer, size_t buffer_size)
@@ -237,7 +226,7 @@ TbBool gameplay_read_history(NetUserId source, const char *buffer, size_t buffer
         return false;
     }
 
-    if (!unpack_history_bundle(packet_history_buffer, header.original_length, header.player, NULL, sizeof(struct Packet))) {
+    if (!gameplay_unpack_payload(packet_history_buffer, header.original_length, header.player, NULL, sizeof(struct Packet))) {
         WARNLOG("Gameplay packet history from peer %i could not be stored for player %d", source, (int)header.player);
         return false;
     }
@@ -312,7 +301,7 @@ static void send_history_to(NetUserId peer_id, PlayerNumber player, unsigned cha
     }
 
     char packet_history_buffer[sizeof(struct RedundantPacketBundle)];
-    size_t packet_history_size = build_history_bundle(player, (struct RedundantPacketBundle *)packet_history_buffer, packet_count, first_packet);
+    size_t packet_history_size = gameplay_build_payload(player, packet_count, first_packet, packet_history_buffer);
     if (packet_history_size == 0) {
         return;
     }
@@ -342,29 +331,14 @@ static void send_history_to(NetUserId peer_id, PlayerNumber player, unsigned cha
     free(message_buffer);
 }
 
-static void send_full_history(NetUserId peer_id)
-{
-    if (netstate.my_id != SERVER_ID) {
-        PlayerNumber player = (PlayerNumber)netstate.my_id;
-        if (is_history_player_valid(player)) {
-            send_history_to(peer_id, player, PACKET_HISTORY_SIZE, NULL);
-        }
-        return;
-    }
-
-    for (PlayerNumber player = 0; player < netstate.max_players; player += 1) {
-        if (player == peer_id || !network_player_active(player)) {
-            continue;
-        }
-        send_history_to(peer_id, player, PACKET_HISTORY_SIZE, NULL);
-    }
-}
-
 static void send_wait_history(void)
 {
     if (netstate.my_id != SERVER_ID) {
         if (send_due(&last_packet_history_send, PACKET_HISTORY_INTERVAL_MS)) {
-            send_full_history(SERVER_ID);
+            PlayerNumber player = (PlayerNumber)netstate.my_id;
+            if (is_history_player_valid(player)) {
+                send_history_to(SERVER_ID, player, PACKET_HISTORY_SIZE, NULL);
+            }
         }
         return;
     }
@@ -391,7 +365,12 @@ static void send_wait_history(void)
             continue;
         }
         next_history_peer = (peer_id + 1) % netstate.max_players;
-        send_full_history(peer_id);
+        for (PlayerNumber player = 0; player < netstate.max_players; player += 1) {
+            if (player == peer_id || !network_player_active(player)) {
+                continue;
+            }
+            send_history_to(peer_id, player, PACKET_HISTORY_SIZE, NULL);
+        }
         return;
     }
 }

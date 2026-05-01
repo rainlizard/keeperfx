@@ -34,7 +34,9 @@ TbError exchange_frame_message(void *send_buf, void *server_buf, size_t frame_si
 TbError process_network_message(NetUserId source, void *server_buf, size_t frame_size, enum NetMessageType expected_frame_type);
 void process_peer_msgs(NetUserId peer_id, void *server_buf, size_t frame_size);
 
-size_t gameplay_build_payload(PlayerNumber player, const struct Packet *first_packet, void *buffer);
+#define GAMEPLAY_PACKET_BUNDLE 2
+
+size_t gameplay_build_payload(PlayerNumber player, unsigned char packet_count, const struct Packet *first_packet, void *buffer);
 TbBool gameplay_unpack_payload(const char *buffer, size_t buffer_size, PlayerNumber player, void *out_packet, size_t packet_size);
 TbBool gameplay_read_history(NetUserId source, const char *buffer, size_t buffer_size);
 

@@ -125,7 +125,7 @@ TbError exchange_frame_message(void *send_buf, void *server_buf, size_t frame_si
     *(int *)write_pos = netstate.seq_nbr;
     write_pos += 4;
     if (msg_type == NETMSG_GAMEPLAY_UNSEQUENCED) {
-        size_t payload_size = gameplay_build_payload((PlayerNumber)netstate.my_id, (const struct Packet *)send_buf, write_pos);
+        size_t payload_size = gameplay_build_payload((PlayerNumber)netstate.my_id, GAMEPLAY_PACKET_BUNDLE, (const struct Packet *)send_buf, write_pos);
         if (payload_size > 0) {
             write_pos += payload_size;
         }
