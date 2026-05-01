@@ -139,6 +139,7 @@ TbBool read_packet_history(NetUserId source, const char *buffer, size_t buffer_s
         store_packet_history(header.player, packet);
     }
     sync_multiplayer_turn_ns = -1000000;
+    JUSTLOG("SPEEDUP!");
     return true;
 }
 
@@ -305,10 +306,9 @@ TbError LbNetwork_ExchangePackets(void *send_buf, void *server_buf, size_t frame
             PlayerNumber local_packet_player = my_player->packet_num;
             if (!have_all_turn_packets(local_packet_player)) {
                 GameTurn expected_turn = get_gameturn() - game.input_lag_turns;
-                TbClockMSec wait_start_time = LbTimerClock();
+                TbClockMSec wait_start_time = 0;
                 TbBool turn_complete = false;
-                sync_multiplayer_turn_ns = 1000000;
-                MULTIPLAYER_LOG("LbNetwork_ExchangePackets: Missing packets for turn=%lu, collecting...", (unsigned long)expected_turn);
+                TbBool waiting_started = false;
 
                 while (!turn_complete) {
                     send_wait_history();
@@ -334,18 +334,27 @@ TbError LbNetwork_ExchangePackets(void *send_buf, void *server_buf, size_t frame
                     if (turn_complete) {
                         break;
                     }
+                    if (!waiting_started) {
+                        wait_start_time = LbTimerClock();
+                        waiting_started = true;
+                        MULTIPLAYER_LOG("LbNetwork_ExchangePackets: Missing packets for turn=%lu, collecting...", (unsigned long)expected_turn);
+                    }
                     if (netstate.my_id == SERVER_ID && send_due(&last_host_resend, SEND_HISTORY_COOLDOWN_MS)) {
                         if (exchange_frame_message(send_buf, server_buf, frame_size, NETMSG_GAMEPLAY_UNSEQUENCED) != Lb_OK) {
                             return Lb_FAIL;
                         }
                     }
+                    sync_multiplayer_turn_ns = 1000000;
+                    JUSTLOG("SLOWDOWN!");
                     network_yield_waiting_gameplay_packets();
                     if (quit_game || exit_keeper) {
                         netstate.seq_nbr += 1;
                         return Lb_OK;
                     }
                 }
-                MULTIPLAYER_LOG("LbNetwork_ExchangePackets: Completed wait for turn=%lu after %dms", (unsigned long)expected_turn, (int32_t)(LbTimerClock() - wait_start_time));
+                if (waiting_started) {
+                    MULTIPLAYER_LOG("LbNetwork_ExchangePackets: Completed wait for turn=%lu after %dms", (unsigned long)expected_turn, (int32_t)(LbTimerClock() - wait_start_time));
+                }
             }
         }
     }
