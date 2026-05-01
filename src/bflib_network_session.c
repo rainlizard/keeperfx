@@ -40,7 +40,7 @@ extern void network_yield_draw_frontend(void);
 /******************************************************************************/
 
 // Duplicate packet value represents current packet + additional packets.
-#define GAMEPLAY_PACKET_BUNDLE 2
+#define REDUNDANT_PACKET_BUNDLE 2
 #define SEND_DUPLICATE_PACKETS 3
 
 static TbBool read_msg_text(char **read_pos, const char **text, size_t max_len)
@@ -129,7 +129,7 @@ TbError exchange_frame_message(void *send_buf, void *server_buf, size_t frame_si
         if (current_packet->turn > 0) {
             const struct Packet *previous_packet = get_history_packet((PlayerNumber)netstate.my_id, current_packet->turn - 1);
             if (previous_packet != NULL) {
-                *packet_count = GAMEPLAY_PACKET_BUNDLE;
+                *packet_count = REDUNDANT_PACKET_BUNDLE;
                 memcpy(write_pos, previous_packet, sizeof(struct Packet));
                 write_pos += sizeof(struct Packet);
             }
@@ -267,7 +267,7 @@ static TbError process_network_message(NetUserId source, void *server_buf, size_
                 return ignore_frame();
             }
             unsigned char packet_count = *(const unsigned char *)read_pos;
-            if (packet_count < 1 || packet_count > GAMEPLAY_PACKET_BUNDLE
+            if (packet_count < 1 || packet_count > REDUNDANT_PACKET_BUNDLE
              || payload_size < sizeof(unsigned char) + packet_count * sizeof(struct Packet)) {
                 WARNLOG("Invalid gameplay packet bundle from peer %i (%u bytes)", peer_id, (unsigned)payload_size);
                 return ignore_frame();
