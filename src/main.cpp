@@ -3265,6 +3265,9 @@ TbBool keeper_screen_swap(void)
  * Waits until the next game turn. Delay is usually controlled by
  * num_fps variable.
  */
+extern "C" int32_t sync_mp_client_ns;
+int32_t sync_mp_client_ns;
+
 TbBool keeper_wait_for_next_turn(void)
 {
     const long double tick_ns_one_sec = 1000000000.0;
@@ -3290,6 +3293,10 @@ TbBool keeper_wait_for_next_turn(void)
         long double tick_ns_cur = get_time_tick_ns();
         long double tick_ns_used = tick_ns_cur - tick_ns_last_turn;
         long double tick_ns_delay = tick_ns_one_frame - tick_ns_used;
+        if (sync_mp_client_ns != 0) {
+            tick_ns_delay += sync_mp_client_ns;
+            sync_mp_client_ns = 0;
+        }
 
         long double tick_ns_end = tick_ns_cur;
         // tick_ns_used: every level, initialized_time_point will be reset, so tick_ns_used may be less than 0 when enter level for the non-first time, Skip it directly to solve the problem.
@@ -3515,6 +3522,10 @@ void gameplay_loop_timestep()
     frametime_start_measurement(Frametime_Sleep);
     if (is_feature_on(Ft_DeltaTime) == true) {
         game.delta_time = get_delta_time();
+        if (sync_mp_client_ns != 0) {
+            game.delta_time -= ((float)sync_mp_client_ns / 1000000000.0f) * game_num_fps;
+            sync_mp_client_ns = 0;
+        }
         game.process_turn_time += game.delta_time;
     } else {
         // Set to 1 so that these variables don't affect anything. (if something is multiplied by 1 it doesn't change)

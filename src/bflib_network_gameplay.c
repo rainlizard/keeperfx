@@ -31,6 +31,7 @@
 #include "post_inc.h"
 
 extern void network_yield_waiting_gameplay_packets(void);
+extern int32_t sync_mp_client_ns;
 
 /******************************************************************************/
 
@@ -342,8 +343,12 @@ TbError LbNetwork_ExchangePackets(void *send_buf, void *server_buf, size_t frame
                         return Lb_OK;
                     }
                 }
-                int32_t elapsed = LbTimerClock() - wait_start_time;
-                MULTIPLAYER_LOG("LbNetwork_ExchangePackets: Completed wait for turn=%lu after %dms", (unsigned long)expected_turn, elapsed);
+                if (netstate.my_id != SERVER_ID) {
+                    sync_mp_client_ns = 1000000;
+                }
+                MULTIPLAYER_LOG("LbNetwork_ExchangePackets: Completed wait for turn=%lu after %dms", (unsigned long)expected_turn, (int32_t)(LbTimerClock() - wait_start_time));
+            } else if (netstate.my_id != SERVER_ID) {
+                sync_mp_client_ns = -1000000;
             }
         }
     }
