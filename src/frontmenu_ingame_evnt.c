@@ -890,6 +890,7 @@ void draw_network_stats() {
     unsigned int outgoing_total_kb = outgoing_total_bytes / 1024;
     unsigned int incoming_total_kb = incoming_total_bytes / 1024;
     unsigned int reliable_commands = GetClientReliableCommandsInFlight();
+    test
     int input_lag = game.input_lag_turns;
     snprintf(text, sizeof(text), "Full ping: %lums | Half ping: %lums | Jitter: %lums", ping, half_ping, variance);
     LbTextDrawResized(0, 0, tx_units_per_px, text);
