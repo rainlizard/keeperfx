@@ -894,6 +894,7 @@ void draw_network_stats() {
     snprintf(text, sizeof(text), "Full ping: %lums | Half ping: %lums | Jitter: %lums", ping, half_ping, variance);
     LbTextDrawResized(0, 0, tx_units_per_px, text);
     int input_lag_ms = input_lag * 50;
+    test
     snprintf(text, sizeof(text), "Queue: %u | Reliable: %u | Input Lag: %d turns (%dms)", queue_size, reliable_commands, input_lag, input_lag_ms);
     LbTextDrawResized(0, tx_units_per_px, tx_units_per_px, text);
     snprintf(text, sizeof(text), "Transit: %u bytes | In: %u KB | Out: %u KB | Lost: %u | Loss: %u%%", transit, incoming_total_kb, outgoing_total_kb, packets_lost, packet_loss);
