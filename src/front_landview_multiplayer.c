@@ -23,9 +23,7 @@
 #include "bflib_basics.h"
 #include "bflib_datetm.h"
 #include "bflib_mouse.h"
-#include "net_main.h"
 #include "net_lobby.h"
-#include "net_exchange_common.h"
 #include "bflib_sndlib.h"
 #include "bflib_sound.h"
 #include "bflib_sprite.h"
@@ -56,12 +54,6 @@ extern "C" {
 #define NETLAND_SLAP_MISS_SOUND_VARIANTS 6
 #define NETLAND_HAND_ANIM_SPEED 20
 #define NETLAND_HAND_LIMP_FRAME_COUNT ((int32_t)(sizeof(hand_limp_xoffset) / sizeof(hand_limp_xoffset[0])))
-
-struct NetLandPlayersState {
-    int32_t unselected_players;
-    LevelNumber selected_level_number;
-    TbBool is_selected;
-};
 
 enum NetLandSlapFrame {
     NetLandSlap_StartFrame = 9,
@@ -111,6 +103,34 @@ struct ScreenPacket net_screen_packet[MAX_NET_USERS];
 }
 #endif
 /******************************************************************************/
+LevelNumber get_selected_level_number_from_packets(const struct ScreenPacket *screen_packets, int32_t screen_packet_count)
+{
+    int32_t leading_votes = 0;
+    LevelNumber selected_level_number = SINGLEPLAYER_NOTSTARTED;
+
+    memset(scratch, 0, PALETTE_SIZE);
+    for (int32_t i = 0; i < screen_packet_count; i++) {
+        const struct ScreenPacket *nspck = &screen_packets[i];
+        LevelNumber level_number = nspck->action_par1;
+        int32_t votes;
+
+        if ((nspck->networkstatus_flags & NetStat_PlayerConnected) == 0) {
+            continue;
+        }
+        if ((screen_packet_action(nspck) == NetAct_Slapping) || (level_number <= 0)) {
+            return SINGLEPLAYER_NOTSTARTED;
+        }
+        votes = ++scratch[level_number];
+        if (votes > leading_votes) {
+            selected_level_number = level_number;
+            leading_votes = votes;
+        } else if (votes == leading_votes) {
+            selected_level_number = SINGLEPLAYER_NOTSTARTED;
+        }
+    }
+    return selected_level_number;
+}
+
 static void update_net_ensigns_visibility(void)
 {
     SYNCDBG(18, "Starting");
@@ -482,7 +502,7 @@ static TbBool frontmap_exchange_screen_packet(void)
         net_map_local.local_slap_send_frame++;
     }
     if (fe_network_active) {
-        if (LbNetwork_Exchange(NETMSG_FRONTEND, nspck, &net_screen_packet, sizeof(struct ScreenPacket))) {
+        if (LbNetwork_ExchangeFrontend(nspck, &net_screen_packet, sizeof(struct ScreenPacket))) {
             ERRORLOG("LbNetwork_Exchange failed");
             return false;
         }
@@ -490,12 +510,10 @@ static TbBool frontmap_exchange_screen_packet(void)
     return true;
 }
 
-static TbBool frontnetmap_update_players(struct NetLandPlayersState * nmps)
+static LevelNumber frontnetmap_update_players(void)
 {
-    memset(scratch, 0, PALETTE_SIZE);
     struct ScreenPacket* my_nspck = &net_screen_packet[my_player_number];
     TbBool slap_hit_confirmed = false;
-    int32_t leading_votes = -1;
     for (int32_t i = 0; i < MAX_NET_USERS; i++) {
         struct ScreenPacket* nspck = &net_screen_packet[i];
         unsigned char action;
@@ -507,7 +525,7 @@ static TbBool frontnetmap_update_players(struct NetLandPlayersState * nmps)
         if (remote_player && !network_player_active(i)) {
             LbNetwork_EnableNewPlayers(1);
             frontend_set_state(FeSt_NET_START);
-            return false;
+            return SINGLEPLAYER_NOTSTARTED;
         }
         if (nspck->action_par1 == LEVELNUMBER_ERROR) {
             if (fe_network_active) {
@@ -518,22 +536,9 @@ static TbBool frontnetmap_update_players(struct NetLandPlayersState * nmps)
             } else {
                 frontend_set_state(FeSt_MAIN_MENU);
             }
-            return false;
+            return SINGLEPLAYER_NOTSTARTED;
         }
         action = screen_packet_action(nspck);
-        if ((nspck->action_par1 == SINGLEPLAYER_NOTSTARTED) || (action == NetAct_Slapping)) {
-            nmps->unselected_players++;
-        } else {
-            LevelNumber pckt_lvnum = nspck->action_par1;
-            scratch[pckt_lvnum]++;
-            if (scratch[pckt_lvnum] == leading_votes) {
-                nmps->is_selected = false;
-            } else if (scratch[pckt_lvnum] > leading_votes) {
-                nmps->selected_level_number = pckt_lvnum;
-                leading_votes = scratch[pckt_lvnum];
-                nmps->is_selected = true;
-            }
-        }
         if ((action == NetAct_Slapping) && (nspck->action_par1 == NetLandSlap_HitFrame) && remote_player && (screen_packet_action(my_nspck) != NetAct_Limping)) {
             int32_t hand_x;
             int32_t hand_y;
@@ -545,8 +550,8 @@ static TbBool frontnetmap_update_players(struct NetLandPlayersState * nmps)
                 net_map_local.local_slap_anim_start = 0;
                 net_map_local.local_slap_send_frame = 0;
                 net_map_local.slap_miss_wait = 0;
-                net_map_local.limp_x = nspck->stored_data1;
-                net_map_local.limp_y = nspck->stored_data2;
+                net_map_local.limp_x = my_nspck->stored_data1;
+                net_map_local.limp_y = my_nspck->stored_data2;
                 play_non_3d_sample(NETLAND_SLAP_SOUND);
                 SYNCLOG("Slapped out of level");
             }
@@ -571,7 +576,7 @@ static TbBool frontnetmap_update_players(struct NetLandPlayersState * nmps)
             }
         }
     }
-    return true;
+    return get_selected_level_number_from_packets(net_screen_packet, MAX_NET_USERS);
 }
 
 TbBool frontnetmap_update(void)
@@ -579,7 +584,7 @@ TbBool frontnetmap_update(void)
     SYNCDBG(8,"Starting");
     set_music_volume((map_sound_fade * settings.music_volume) / FULL_LOUDNESS);
 
-    struct NetLandPlayersState nmps = { 0, SINGLEPLAYER_NOTSTARTED, false };
+    LevelNumber selected_level_number = SINGLEPLAYER_NOTSTARTED;
     if ((map_info.fadeflags & MLInfoFlg_Zooming) != 0) {
         if (frontmap_update_zoom()) {
             SYNCDBG(8,"Zoom end");
@@ -587,17 +592,17 @@ TbBool frontnetmap_update(void)
         }
     } else {
         frontmap_exchange_screen_packet();
-        frontnetmap_update_players(&nmps);
+        selected_level_number = frontnetmap_update_players();
     }
-    if ((!nmps.unselected_players) && (nmps.selected_level_number > 0) && (nmps.is_selected)) {
-        set_selected_level_number(nmps.selected_level_number);
-        set_level_name_text(nmps.selected_level_number, NULL);
+    if (selected_level_number > 0) {
+        set_selected_level_number(selected_level_number);
+        set_level_name_text(selected_level_number, NULL);
         if (fe_network_active < 1) {
             map_info.state_trigger = FeSt_START_KPRLEVEL;
         } else {
             map_info.state_trigger = FeSt_START_MPLEVEL;
         }
-        frontmap_zoom_in_init(nmps.selected_level_number);
+        frontmap_zoom_in_init(selected_level_number);
         if (!fe_network_active) {
             fe_computer_players = 1;
         }

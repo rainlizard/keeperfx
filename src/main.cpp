@@ -34,6 +34,7 @@
 #include "bflib_mouse.h"
 #include "bflib_mshandler.hpp"
 #include "bflib_filelst.h"
+#include "net_exchange_gameplay.h"
 #include "net_lobby.h"
 #include "net_resync.h"
 #include "bflib_planar.h"
@@ -1753,7 +1754,7 @@ void clear_game(void)
     init_animating_texture_maps();
     clear_slabsets();
     game.skip_initial_input_turns = 0;
-    clear_input_lag_queue();
+    initialize_packet_history();
 }
 
 void clear_game_for_save(void)
@@ -2041,7 +2042,10 @@ void set_mouse_light(struct PlayerInfo *player)
     SYNCDBG(6,"Starting");
     struct Packet *pckt;
     if (is_my_player(player)) {
-        pckt = get_local_input_lag_packet_for_turn(get_gameturn());
+        pckt = (struct Packet *)get_history_packet(player->packet_num, get_gameturn());
+        if (pckt == NULL) {
+            pckt = get_packet_direct(player->packet_num);
+        }
     } else {
         pckt = get_packet_direct(player->packet_num);
     }
@@ -3248,6 +3252,10 @@ TbBool keeper_screen_swap(void)
  * Waits until the next game turn. Delay is usually controlled by
  * num_fps variable.
  */
+extern "C" {
+int32_t multiplayer_speed_adjustment_ns;
+}
+
 TbBool keeper_wait_for_next_turn(void)
 {
     const long double tick_ns_one_sec = 1000000000.0;
@@ -3260,7 +3268,7 @@ TbBool keeper_wait_for_next_turn(void)
     if (game.frame_skip >= 0)
     {
         // Standard delaying system
-        long num_fps = turns_per_second;
+        int32_t num_fps = turns_per_second;
         if (game.frame_skip > 0)
             num_fps *= game.frame_skip;
 
@@ -3273,6 +3281,9 @@ TbBool keeper_wait_for_next_turn(void)
         long double tick_ns_cur = get_time_tick_ns();
         long double tick_ns_used = tick_ns_cur - tick_ns_last_turn;
         long double tick_ns_delay = tick_ns_one_frame - tick_ns_used;
+        if (multiplayer_speed_adjustment_ns != 0) {
+            tick_ns_delay += multiplayer_speed_adjustment_ns;
+        }
 
         long double tick_ns_end = tick_ns_cur;
         // tick_ns_used: every level, initialized_time_point will be reset, so tick_ns_used may be less than 0 when enter level for the non-first time, Skip it directly to solve the problem.
@@ -3457,6 +3468,20 @@ extern "C" void network_yield_draw_gameplay()
     gameplay_loop_draw();
 }
 
+void gameplay_loop_timestep();
+
+extern "C" void network_yield_waiting_gameplay_packets()
+{
+    frametime_end_measurement(Frametime_Logic);
+    do_draw = true;
+    LbWindowsControl();
+    gameplay_loop_draw();
+    gameplay_loop_timestep();
+    frametime_start_measurement(Frametime_Logic);
+    if (frametime_enabled())
+        framerate_measurement_capture(Framerate_Logic);
+}
+
 extern "C" void update_velocity(void);
 extern "C" void check_mouse_scroll(void);
 extern "C" void fronttorture_update(void);
@@ -3484,6 +3509,9 @@ void gameplay_loop_timestep()
     frametime_start_measurement(Frametime_Sleep);
     if (is_feature_on(Ft_DeltaTime) == true) {
         game.delta_time = get_delta_time();
+        if (multiplayer_speed_adjustment_ns != 0) {
+            game.delta_time -= ((float)multiplayer_speed_adjustment_ns / 1000000000.0f) * turns_per_second;
+        }
         game.process_turn_time += game.delta_time;
     } else {
         // Set to 1 so that these variables don't affect anything. (if something is multiplied by 1 it doesn't change)
@@ -3524,7 +3552,6 @@ void keeper_gameplay_loop(void)
 
     initial_time_point();
     LbSleepExtInit();
-    LbNetwork_TimesyncBarrier();
 
     //the main gameplay loop starts
     while ((!quit_game) && (!exit_keeper))

@@ -75,7 +75,8 @@ enum NetAction {
     NetAct_Slapping           = 0x08,
     NetAct_Limping            = 0x10,
     NetAct_HostStartLevel     = 0x18,
-    NetAct_SetAlliance        = 0x20,
+    NetAct_OpenLandView       = 0x20,
+    NetAct_SetAlliance        = 0x28,
     NetAct_SetComputerPlayers = 0x38,
 };
 
@@ -135,6 +136,7 @@ TbBool play_current_description_speech(short play_good);
 TbBool play_description_speech(LevelNumber lvnum, short play_good);
 void check_mouse_scroll(void);
 void update_velocity(void);
+LevelNumber get_selected_level_number_from_packets(const struct ScreenPacket *screen_packets, int32_t screen_packet_count);
 /******************************************************************************/
 #ifdef __cplusplus
 }
