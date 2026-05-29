@@ -54,6 +54,7 @@ void process_player_leave_game_packet(struct PlayerInfo *player);
 void process_disconnected_network_players(void);
 void sync_initial_network_seed(void);
 unsigned long get_host_player_id(void);
+TbBool network_has_remote_enemies_remaining(void);
 /******************************************************************************/
 #ifdef __cplusplus
 }

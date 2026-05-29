@@ -309,7 +309,7 @@ static void resolve_network_quit_outcome(struct PlayerInfo *player)
     set_player_as_won_level(player);
 }
 
-static TbBool network_has_remote_enemies_remaining(void)
+TbBool network_has_remote_enemies_remaining(void)
 {
     struct PlayerInfo *myplyr = get_my_player();
     for (int i = 0; i < PLAYERS_COUNT; i++) {
