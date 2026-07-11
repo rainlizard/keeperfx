@@ -2080,6 +2080,25 @@ static void set_packet_action_for_thing_under_hand(struct PlayerInfo* player, st
     }
 }
 
+static void set_packet_tagging_position_from_local_camera(struct PlayerInfo *player, struct Packet *pckt)
+{
+    if ((player->view_type != PVT_DungeonTop) || (player->work_state != PSt_CtrlDungeon)) {
+        return;
+    }
+    if (((pckt->control_flags & (PCtr_Gui | PCtr_MapCoordsValid)) != PCtr_MapCoordsValid) || ((pckt->control_flags & PCtr_LBtnAnyAction) == 0) || (pckt->action != PckA_None)) {
+        return;
+    }
+    int32_t cursor_state = (pckt->additional_packet_values & PCAdV_ContextMask) >> 1;
+    MapCoord pos_x = subtile_coord(top_pointed_at_x, top_pointed_at_frac_x);
+    MapCoord pos_y = subtile_coord(top_pointed_at_y, top_pointed_at_frac_y);
+    MapSubtlCoord subtile_x = coord_subtile(pos_x);
+    MapSubtlCoord subtile_y = coord_subtile(pos_y);
+    if ((cursor_state != CSt_PickAxe) && ((cursor_state != CSt_PowerHand) || (local_thing_under_hand != 0) || !can_dig_here(subtile_x, subtile_y, my_player_number, true))) {
+        return;
+    }
+    set_players_packet_position(pckt, pos_x, pos_y, cursor_state);
+}
+
 static void get_packet_control_mouse_clicks(void)
 {
     SYNCDBG(8,"Starting");
@@ -2122,6 +2141,7 @@ static void get_packet_control_mouse_clicks(void)
     {
       set_players_packet_control(player, PCtr_RBtnRelease);
     }
+    set_packet_tagging_position_from_local_camera(player, pckt);
 }
 
 static short get_map_action_inputs(void)
