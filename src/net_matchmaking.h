@@ -27,9 +27,10 @@ extern "C" {
 #endif
 
 #define MATCHMAKING_URL    "wss://matchmaking.keeperfx.workers.dev/ws"
-#define MATCHMAKING_IP_URL "https://matchmaking.keeperfx.workers.dev/ip"
+#define MATCHMAKING_CLAIM_URL "https://matchmaking.keeperfx.workers.dev/claim"
 #define MATCHMAKING_ID_MAX 64
 #define MATCHMAKING_IP_MAX 64
+#define MATCHMAKING_REQUEST_ID_MAX 33
 #define MATCHMAKING_NAME_MAX SESSION_NAME_MAX_LEN
 #define MATCHMAKING_SESSIONS_MAX 32
 
@@ -38,6 +39,8 @@ typedef struct {
     char ipv6[MATCHMAKING_IP_MAX];
     int ipv4_port;
     int ipv6_port;
+    char request_id[MATCHMAKING_REQUEST_ID_MAX];
+    char punch[MATCHMAKING_REQUEST_ID_MAX];
 } PunchAddresses;
 
 extern struct TbNetworkSessionNameEntry matchmaking_sessions[MATCHMAKING_SESSIONS_MAX];
@@ -50,6 +53,8 @@ int matchmaking_request_list(void);
 void matchmaking_disconnect(void);
 void matchmaking_close_lobby(void);
 void matchmaking_refresh_sessions(void);
+void matchmaking_host_heartbeat(void);
+void matchmaking_update_ports(int udp_ipv4_port, int udp_ipv6_port);
 int matchmaking_create(const char *name, int udp_ipv4_port, int udp_ipv6_port);
 int matchmaking_punch(const char *lobby_id, int udp_ipv4_port, int udp_ipv6_port, PunchAddresses *output);
 int matchmaking_poll_punch(PunchAddresses *output);

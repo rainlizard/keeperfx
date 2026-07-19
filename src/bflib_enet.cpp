@@ -41,6 +41,9 @@
 #define ENET_ADDRESS_BUFFER_SIZE 128
 #define INCOMING_QUEUE_WARNING_THRESHOLD 200
 #define INCOMING_QUEUE_WARNING_INTERVAL 100
+#define MAX_PENDING_PUNCHES 8
+#define PUNCH_ATTEMPT_LIFETIME_MS 7000
+#define STUN_KEEPALIVE_INTERVAL_MS 15000
 
 uint16_t external_ipv4_port = 0;
 int skip_holepunch = 0;
@@ -56,8 +59,22 @@ namespace
     ENetHost *host = nullptr;
     ENetPeer *client_peer = nullptr;
     int host_is_dual_stack = 0;
+    int external_ipv4_port_is_mapping = 0;
     TransferRateTracker download_rate_tracker = {0, 0};
     TransferRateTracker upload_rate_tracker = {0, 0};
+
+    struct PunchAttempt {
+        ENetAddress ipv4;
+        ENetAddress ipv6;
+        enet_uint32 connect_data;
+        int has_ipv4;
+        int has_ipv6;
+        TbClockMSec next_punch;
+        TbClockMSec expires;
+        char request_id[MATCHMAKING_REQUEST_ID_MAX];
+    };
+
+    PunchAttempt punch_attempts[MAX_PENDING_PUNCHES] = {};
 
     // List
     ENetPacket *oldest_packet[MAX_NET_USERS] = {nullptr};
@@ -161,6 +178,8 @@ namespace
         }
         external_ipv4_port = 0;
         host_is_dual_stack = 0;
+        external_ipv4_port_is_mapping = 0;
+        memset(punch_attempts, 0, sizeof(punch_attempts));
     }
 
     void bf_enet_exit()
@@ -208,8 +227,12 @@ namespace
             LbNetLog("ENet: host created (IPv4) on port %d\n", (int)address.port);
         }
         enet_host_compress_with_range_coder(host);
-        port_forward_add_mapping(address.port);
+        uint16_t mapped_ipv4_port = (uint16_t)port_forward_add_mapping(address.port);
         external_ipv4_port = holepunch_stun_query(host, NULL, 0);
+        if (!external_ipv4_port) {
+            external_ipv4_port = mapped_ipv4_port;
+            external_ipv4_port_is_mapping = 1;
+        }
         return Lb_OK;
     }
 
@@ -302,13 +325,12 @@ namespace
         return Lb_OK;
     }
 
-    TbError connect_to_current_join_host(const ENetAddress *connect_address, const char *join_type,
-        TbClockMSec display_deadline, TbClockMSec timeout_ms)
+    TbError connect_to_current_join_host(const ENetAddress *connect_address, const char *join_type, TbClockMSec display_deadline, TbClockMSec timeout_ms, enet_uint32 connect_data)
     {
         if (timeout_ms <= 0)
             return Lb_FAIL;
         enet_host_compress_with_range_coder(host);
-        client_peer = enet_host_connect(host, connect_address, NUM_CHANNELS, 0);
+        client_peer = enet_host_connect(host, connect_address, NUM_CHANNELS, connect_data);
         if (!client_peer) {
             LbNetLog("Join: enet_host_connect returned NULL\n");
             host_destroy();
@@ -351,7 +373,7 @@ namespace
         return Lb_FAIL;
     }
 
-    TbError join_direct_session(const char *session, TbClockMSec display_deadline, TbClockMSec timeout_ms, const char *join_label)
+    TbError join_direct_session(const char *session, TbClockMSec display_deadline, TbClockMSec timeout_ms, const char *join_label, enet_uint32 connect_data)
     {
         ENetAddress connect_address;
         char address_string[ENET_ADDRESS_BUFFER_SIZE] = {0};
@@ -373,13 +395,14 @@ namespace
         if (create_join_host(connect_type) != Lb_OK)
             return Lb_FAIL;
         TbClockMSec stage_start = LbTimerClock();
-        TbError result = connect_to_current_join_host(&connect_address, join_type, display_deadline, timeout_ms);
+        TbError result = connect_to_current_join_host(&connect_address, join_type, display_deadline, timeout_ms, connect_data);
         const char *stage_name = (connect_type == ENET_ADDRESS_TYPE_IPV6) ? "TIMEOUT_CONNECT_DIRECT_IPV6" : "TIMEOUT_CONNECT_DIRECT_IPV4";
         LbNetLog("Join: %s took %d ms (%s)\n", stage_name, (int)(LbTimerClock() - stage_start), result == Lb_OK ? "connected" : "failed");
         return result;
     }
 
-    TbError join_direct_fallback(const PunchAddresses *punch_addresses, TbClockMSec display_deadline) {
+    TbError join_direct_fallback(const PunchAddresses *punch_addresses, TbClockMSec display_deadline)
+    {
         const int has_ipv4 = (punch_addresses->ipv4[0] != '\0');
         const int has_ipv6 = (punch_addresses->ipv6[0] != '\0');
         if (!has_ipv4 && !has_ipv6) {
@@ -388,15 +411,16 @@ namespace
         }
         LbNetLog("Join: hole-punch phase timed out, retrying via direct connect\n");
         char session[ENET_ADDRESS_BUFFER_SIZE];
+        enet_uint32 connect_data = (enet_uint32)strtoul(punch_addresses->punch, NULL, 16);
         if (has_ipv6) {
-            snprintf(session, sizeof(session), "[%s]:%d", punch_addresses->ipv6, ENET_DEFAULT_PORT);
-            if (join_direct_session(session, display_deadline, TIMEOUT_CONNECT_DIRECT_IPV6, "direct connect fallback") == Lb_OK)
+            snprintf(session, sizeof(session), "[%s]:%d", punch_addresses->ipv6, punch_addresses->ipv6_port);
+            if (join_direct_session(session, display_deadline, TIMEOUT_CONNECT_DIRECT_IPV6, "direct connect fallback", connect_data) == Lb_OK)
                 return Lb_OK;
         }
         if (!has_ipv4)
             return Lb_FAIL;
-        snprintf(session, sizeof(session), "%s:%d", punch_addresses->ipv4, ENET_DEFAULT_PORT);
-        return join_direct_session(session, display_deadline, TIMEOUT_CONNECT_DIRECT_IPV4, "direct connect fallback");
+        snprintf(session, sizeof(session), "%s:%d", punch_addresses->ipv4, punch_addresses->ipv4_port);
+        return join_direct_session(session, display_deadline, TIMEOUT_CONNECT_DIRECT_IPV4, "direct connect fallback", connect_data);
     }
 
     TbError join_via_holepunch(TbClockMSec join_start_ms) {
@@ -421,6 +445,7 @@ namespace
         }
         ENetAddress ipv4_address = {};
         ENetAddress ipv6_address = {};
+        enet_uint32 connect_data = (enet_uint32)strtoul(punch_addresses.punch, NULL, 16);
         int has_ipv4 = resolve_punch_address(punch_addresses.ipv4, ENET_ADDRESS_TYPE_IPV4, punch_addresses.ipv4_port, &ipv4_address);
         int has_ipv6 = (ipv6_host != nullptr) && resolve_punch_address(punch_addresses.ipv6, ENET_ADDRESS_TYPE_IPV6, punch_addresses.ipv6_port, &ipv6_address);
         if (!has_ipv4 && !has_ipv6) {
@@ -450,9 +475,9 @@ namespace
         ENetPeer *ipv4_peer = nullptr;
         ENetPeer *ipv6_peer = nullptr;
         if (has_ipv6) {
-            ipv6_peer = enet_host_connect(ipv6_host, &ipv6_address, NUM_CHANNELS, 0);
+            ipv6_peer = enet_host_connect(ipv6_host, &ipv6_address, NUM_CHANNELS, connect_data);
         } else if (has_ipv4) {
-            ipv4_peer = enet_host_connect(host, &ipv4_address, NUM_CHANNELS, 0);
+            ipv4_peer = enet_host_connect(host, &ipv4_address, NUM_CHANNELS, connect_data);
         }
         TbClockMSec connection_start = LbTimerClock();
         TbClockMSec holepunch_stage_start = connection_start;
@@ -464,7 +489,7 @@ namespace
         ENetEvent enet_event;
         while (LbTimerClock() < holepunch_deadline) {
             if (has_ipv4 && ipv4_peer == nullptr && LbTimerClock() >= ipv4_delay_end) {
-                ipv4_peer = enet_host_connect(host, &ipv4_address, NUM_CHANNELS, 0);
+                ipv4_peer = enet_host_connect(host, &ipv4_address, NUM_CHANNELS, connect_data);
             }
             if (ipv6_peer && enet_host_service(ipv6_host, &enet_event, 0) > 0 && enet_event.type == ENET_EVENT_TYPE_CONNECT) {
                 LbNetLog("Join: TIMEOUT_CONNECT_HOLEPUNCH took %d ms (connected)\n", (int)(LbTimerClock() - holepunch_stage_start));
@@ -524,9 +549,9 @@ namespace
         } else if (join_lobby_id[0] != '\0') {
             return join_via_holepunch(join_start_ms);
         } else {
-            return join_direct_session(session, LbTimerClock() + TIMEOUT_CONNECT_DIRECT_IPV4, TIMEOUT_CONNECT_DIRECT_IPV4, "direct connect");
+            return join_direct_session(session, LbTimerClock() + TIMEOUT_CONNECT_DIRECT_IPV4, TIMEOUT_CONNECT_DIRECT_IPV4, "direct connect", 0);
         }
-        return connect_to_current_join_host(&connect_address, "LAN", LbTimerClock() + TIMEOUT_CONNECT_DIRECT_IPV4, TIMEOUT_CONNECT_DIRECT_IPV4);
+        return connect_to_current_join_host(&connect_address, "LAN", LbTimerClock() + TIMEOUT_CONNECT_DIRECT_IPV4, TIMEOUT_CONNECT_DIRECT_IPV4, 0);
     }
 
     /*
@@ -550,6 +575,21 @@ namespace
         {
             case ENET_EVENT_TYPE_CONNECT:
                 LbNetLog("ENet: incoming connection accepted\n");
+                for (int i = 0; i < MAX_PENDING_PUNCHES; i++) {
+                    PunchAttempt *attempt = &punch_attempts[i];
+                    if (attempt->expires && enet_event.data == attempt->connect_data) {
+                        *attempt = PunchAttempt();
+                        break;
+                    }
+                    int address_matches = attempt->has_ipv4 && enet_address_equal(&attempt->ipv4, &enet_event.peer->address);
+                    if (!address_matches)
+                        address_matches = attempt->has_ipv6 && enet_address_equal(&attempt->ipv6, &enet_event.peer->address);
+                    if (!address_matches)
+                        continue;
+                    LbNetLog("ENet: rejecting peer with invalid punch token\n");
+                    enet_peer_disconnect_now(enet_event.peer, 0);
+                    return 1;
+                }
                 if (new_user(&user_id)) {
                     enet_peer_timeout(enet_event.peer, PEER_TIMEOUT_LIMIT, PEER_TIMEOUT_MIN_MS, PEER_TIMEOUT_MAX_MS);
                     enet_event.peer->data = reinterpret_cast<void *>(user_id);
@@ -959,41 +999,62 @@ void enet_matchmaking_host_update(void)
 {
     if (!host)
         return;
-    static ENetAddress pending_ipv4;
-    static ENetAddress pending_ipv6;
-    static int has_pending_ipv4 = 0;
-    static int has_pending_ipv6 = 0;
-    static TbClockMSec next_punch_time = 0;
+    uint16_t mapped_ipv4_port = port_forward_update();
+    if (external_ipv4_port_is_mapping && mapped_ipv4_port && mapped_ipv4_port != external_ipv4_port) {
+        external_ipv4_port = mapped_ipv4_port;
+        matchmaking_update_ports(external_ipv4_port, enet_get_bound_ipv6_port());
+    }
+    static TbClockMSec next_stun_keepalive = 0;
+    TbClockMSec now = LbTimerClock();
+    if (now >= next_stun_keepalive) {
+        holepunch_stun_keepalive(host);
+        next_stun_keepalive = now + STUN_KEEPALIVE_INTERVAL_MS;
+    }
+    matchmaking_host_heartbeat();
     PunchAddresses punch_addresses;
-    int new_punch = 0;
     if (matchmaking_poll_punch(&punch_addresses)) {
-        new_punch = 1;
-        has_pending_ipv4 = resolve_punch_address(punch_addresses.ipv4, ENET_ADDRESS_TYPE_IPV4, punch_addresses.ipv4_port, &pending_ipv4);
-        has_pending_ipv6 = host_is_dual_stack && resolve_punch_address(punch_addresses.ipv6, ENET_ADDRESS_TYPE_IPV6, punch_addresses.ipv6_port, &pending_ipv6);
-        next_punch_time = 0;
-        if (has_pending_ipv4 || has_pending_ipv6)
+        now = LbTimerClock();
+        int slot = -1;
+        for (int i = 0; i < MAX_PENDING_PUNCHES; i++) {
+            if (strcmp(punch_attempts[i].request_id, punch_addresses.request_id) == 0 || punch_attempts[i].expires <= now) {
+                slot = i;
+                break;
+            }
+        }
+        if (slot < 0) {
+            slot = 0;
+            for (int i = 1; i < MAX_PENDING_PUNCHES; i++) {
+                if (punch_attempts[i].expires < punch_attempts[slot].expires)
+                    slot = i;
+            }
+        }
+        PunchAttempt *attempt = &punch_attempts[slot];
+        *attempt = PunchAttempt();
+        attempt->has_ipv4 = resolve_punch_address(punch_addresses.ipv4, ENET_ADDRESS_TYPE_IPV4, punch_addresses.ipv4_port, &attempt->ipv4);
+        attempt->has_ipv6 = host_is_dual_stack && resolve_punch_address(punch_addresses.ipv6, ENET_ADDRESS_TYPE_IPV6, punch_addresses.ipv6_port, &attempt->ipv6);
+        attempt->connect_data = (enet_uint32)strtoul(punch_addresses.punch, NULL, 16);
+        attempt->expires = now + PUNCH_ATTEMPT_LIFETIME_MS;
+        snprintf(attempt->request_id, sizeof(attempt->request_id), "%s", punch_addresses.request_id);
+        if (attempt->has_ipv4 || attempt->has_ipv6)
             LbNetLog("Host: received punch ipv4=%s ipv6=%s ipv4_port=%d ipv6_port=%d\n", punch_addresses.ipv4, punch_addresses.ipv6, punch_addresses.ipv4_port, punch_addresses.ipv6_port);
-        if (!has_pending_ipv6 && punch_addresses.ipv6[0] != '\0')
+        if (!attempt->has_ipv6 && punch_addresses.ipv6[0] != '\0')
             LbNetLog("Host: IPv6 punch skipped (host is not dual-stack)\n");
     }
-    if (!has_pending_ipv4 && !has_pending_ipv6) {
-        next_punch_time = 0;
-        return;
-    }
-    if (!new_punch) {
-        for (ENetPeer *peer = host->peers; peer < &host->peers[host->peerCount]; peer++) {
-            if (peer->state == ENET_PEER_STATE_CONNECTED)
-                return;
+    now = LbTimerClock();
+    for (int i = 0; i < MAX_PENDING_PUNCHES; i++) {
+        PunchAttempt *attempt = &punch_attempts[i];
+        if (attempt->expires <= now) {
+            *attempt = PunchAttempt();
+            continue;
         }
+        if (attempt->next_punch > now)
+            continue;
+        if (attempt->has_ipv6)
+            holepunch_punch_to(host, &attempt->ipv6);
+        if (attempt->has_ipv4)
+            holepunch_punch_to(host, &attempt->ipv4);
+        attempt->next_punch = now + HOLEPUNCH_CONNECT_DELAY_MS;
     }
-    TbClockMSec now = LbTimerClock();
-    if (!new_punch && now < next_punch_time)
-        return;
-    if (has_pending_ipv6)
-        holepunch_punch_to(host, &pending_ipv6);
-    if (has_pending_ipv4)
-        holepunch_punch_to(host, &pending_ipv4);
-    next_punch_time = now + HOLEPUNCH_CONNECT_DELAY_MS;
 }
 
 struct NetSP *InitEnetSP()

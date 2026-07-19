@@ -35,17 +35,22 @@
 
 #include "post_inc.h"
 
-#define STUN_SERVER "stun.l.google.com"
 #define STUN_PORT 19302
-#define STUN_TIMEOUT_MS 500
+#define STUN_TIMEOUT_MS 1200
+#define STUN_RETRANSMIT_MS 500
 #define STUN_MAGIC_COOKIE 0x2112A442U
 #define STUN_BINDING_REQUEST 0x0001U
+#define STUN_BINDING_INDICATION 0x0011U
 #define STUN_BINDING_SUCCESS 0x0101U
 #define STUN_ATTRIBUTE_XOR_MAPPED 0x0020U
 #define STUN_RESPONSE_BUFFER_SIZE 512
 #define HOLE_PUNCH_COUNT 4
 #define HOLE_PUNCH_PAYLOAD_SIZE 8
 #define HOLE_PUNCH_LOG_INTERVAL_MS 1000
+
+static const char *stun_servers[] = { "stun.l.google.com", "stun1.l.google.com" };
+static ENetAddress keepalive_address;
+static int keepalive_available = 0;
 
 #pragma pack(push, 1)
 struct StunHeader {
@@ -61,68 +66,65 @@ struct StunAttrHeader {
 };
 #pragma pack(pop)
 
-uint16_t holepunch_stun_query(ENetHost *host, char *output_ip, size_t output_ip_buffer_size)
+static void create_stun_header(ENetHost *host, struct StunHeader *header, uint16_t type)
+{
+    *header = (struct StunHeader){htons(type), htons(0), htonl(STUN_MAGIC_COOKIE), {0}};
+    for (int i = 0; i < 3; i++) {
+        uint32_t random_value = enet_host_random(host);
+        memcpy(header->transaction_id + i * sizeof(random_value), &random_value, sizeof(random_value));
+    }
+}
+
+static uint16_t query_stun_server(ENetHost *host, const char *server, char *output_ip, size_t output_ip_buffer_size)
 {
     ENetAddress stun_server_address;
-    if (enet_address_set_host(&stun_server_address, ENET_ADDRESS_TYPE_IPV4, STUN_SERVER) < 0) {
-        LbNetLog("STUN: failed to resolve %s\n", STUN_SERVER);
+    if (enet_address_set_host(&stun_server_address, ENET_ADDRESS_TYPE_IPV4, server) < 0) {
+        LbNetLog("STUN: failed to resolve %s\n", server);
         return 0;
     }
     stun_server_address.port = STUN_PORT;
-
-    static unsigned s_transaction_counter = 0;
-    s_transaction_counter++;
-    struct StunHeader stun_request = {htons(STUN_BINDING_REQUEST), htons(0), htonl(STUN_MAGIC_COOKIE), {0}};
-    memcpy(stun_request.transaction_id, &s_transaction_counter, sizeof(s_transaction_counter));
+    struct StunHeader stun_request;
+    create_stun_header(host, &stun_request, STUN_BINDING_REQUEST);
     ENetBuffer send_buffer = {.data = &stun_request, .dataLength = sizeof(stun_request)};
-    ENetSocket send_socket = host->socket;
-    ENetSocket fallback_socket = ENET_SOCKET_NULL;
-    int send_succeeded = (enet_socket_send(send_socket, &stun_server_address, &send_buffer, 1) >= 0);
-    if (!send_succeeded) {
+    if (enet_socket_send(host->socket, &stun_server_address, &send_buffer, 1) < 0) {
         ENetAddress mapped_stun_address = stun_server_address;
         enet_address_convert_ipv6(&mapped_stun_address);
-        send_succeeded = (enet_socket_send(send_socket, &mapped_stun_address, &send_buffer, 1) >= 0);
-    }
-    if (!send_succeeded) {
-        LbNetLog("STUN: host socket send failed, falling back to fresh IPv4 socket\n");
-        fallback_socket = enet_socket_create(ENET_ADDRESS_TYPE_IPV4, ENET_SOCKET_TYPE_DATAGRAM);
-        if (fallback_socket == ENET_SOCKET_NULL) {
-            LbNetLog("STUN: failed to create fallback IPv4 socket\n");
+        if (enet_socket_send(host->socket, &mapped_stun_address, &send_buffer, 1) < 0)
             return 0;
-        }
-        if (enet_socket_send(fallback_socket, &stun_server_address, &send_buffer, 1) < 0) {
-            LbNetLog("STUN: fallback IPv4 socket send failed\n");
-            enet_socket_destroy(fallback_socket);
-            return 0;
-        }
-        send_socket = fallback_socket;
+        stun_server_address = mapped_stun_address;
     }
-
     Uint32 timeout_deadline = SDL_GetTicks() + STUN_TIMEOUT_MS;
-    uint16_t external_port_result = 0;
+    Uint32 retransmit_at = SDL_GetTicks() + STUN_RETRANSMIT_MS;
     for (;;) {
         Uint32 now = SDL_GetTicks();
         if (now >= timeout_deadline)
             break;
         enet_uint32 socket_wait_flags = ENET_SOCKET_WAIT_RECEIVE;
-        if (enet_socket_wait(send_socket, &socket_wait_flags, timeout_deadline - now) < 0
-            || !(socket_wait_flags & ENET_SOCKET_WAIT_RECEIVE))
+        Uint32 wait_time = min(timeout_deadline, retransmit_at) - now;
+        if (enet_socket_wait(host->socket, &socket_wait_flags, wait_time) < 0)
             break;
+        if (!(socket_wait_flags & ENET_SOCKET_WAIT_RECEIVE)) {
+            enet_socket_send(host->socket, &stun_server_address, &send_buffer, 1);
+            retransmit_at = timeout_deadline;
+            continue;
+        }
         uint8_t response_buffer[STUN_RESPONSE_BUFFER_SIZE];
         ENetBuffer receive_buffer = {.data = response_buffer, .dataLength = sizeof(response_buffer)};
-        int bytes_received = enet_socket_receive(send_socket, NULL, &receive_buffer, 1);
+        ENetAddress response_source;
+        int bytes_received = enet_socket_receive(host->socket, &response_source, &receive_buffer, 1);
         if (bytes_received <= 0)
             continue;
+        if (!enet_address_equal(&response_source, &stun_server_address))
+            continue;
         if (bytes_received < (int)sizeof(struct StunHeader))
-            break;
+            continue;
         const struct StunHeader *stun_response_header = (const struct StunHeader *)response_buffer;
-        if (ntohs(stun_response_header->type) != STUN_BINDING_SUCCESS
-            || ntohl(stun_response_header->magic) != STUN_MAGIC_COOKIE
-            || memcmp(stun_response_header->transaction_id, stun_request.transaction_id, sizeof(stun_response_header->transaction_id)) != 0)
+        if (ntohs(stun_response_header->type) != STUN_BINDING_SUCCESS || ntohl(stun_response_header->magic) != STUN_MAGIC_COOKIE || memcmp(stun_response_header->transaction_id, stun_request.transaction_id, sizeof(stun_response_header->transaction_id)) != 0)
             continue;
         int attribute_offset = (int)sizeof(struct StunHeader);
         int attributes_end = attribute_offset + (int)ntohs(stun_response_header->length);
-        if (attributes_end > bytes_received) attributes_end = bytes_received;
+        if (attributes_end > bytes_received)
+            continue;
         char mapped_ip[64] = {0};
         uint16_t external_port = 0;
         while (attribute_offset + 4 <= attributes_end) {
@@ -130,8 +132,7 @@ uint16_t holepunch_stun_query(ENetHost *host, char *output_ip, size_t output_ip_
             uint16_t attribute_type = ntohs(stun_attribute->type);
             uint16_t attribute_length = ntohs(stun_attribute->length);
             attribute_offset += 4;
-            if (attribute_type == STUN_ATTRIBUTE_XOR_MAPPED && attribute_length >= 8
-                    && attribute_offset + attribute_length <= attributes_end && response_buffer[attribute_offset + 1] == 0x01) {
+            if (attribute_type == STUN_ATTRIBUTE_XOR_MAPPED && attribute_length >= 8 && attribute_offset + attribute_length <= attributes_end && response_buffer[attribute_offset + 1] == 0x01) {
                 uint16_t xor_encoded_port = ((uint16_t)response_buffer[attribute_offset + 2] << 8) | response_buffer[attribute_offset + 3];
                 external_port = xor_encoded_port ^ (uint16_t)(STUN_MAGIC_COOKIE >> 16);
                 uint32_t xor_encoded_address;
@@ -146,19 +147,36 @@ uint16_t holepunch_stun_query(ENetHost *host, char *output_ip, size_t output_ip_
         }
         if (!external_port)
             continue;
-        if (fallback_socket != ENET_SOCKET_NULL)
-            external_port = host->address.port;
         LbNetLog("STUN: external address %s:%u\n", mapped_ip, (unsigned)external_port);
         if (output_ip && output_ip_buffer_size > 0)
             snprintf(output_ip, output_ip_buffer_size, "%s", mapped_ip);
-        external_port_result = external_port;
-        break;
+        keepalive_address = stun_server_address;
+        keepalive_available = 1;
+        return external_port;
     }
-    if (!external_port_result)
-        LbNetLog("STUN: failed to obtain mapped address\n");
-    if (fallback_socket != ENET_SOCKET_NULL)
-        enet_socket_destroy(fallback_socket);
-    return external_port_result;
+    return 0;
+}
+
+uint16_t holepunch_stun_query(ENetHost *host, char *output_ip, size_t output_ip_buffer_size)
+{
+    keepalive_available = 0;
+    for (unsigned int i = 0; i < sizeof(stun_servers) / sizeof(stun_servers[0]); i++) {
+        uint16_t port = query_stun_server(host, stun_servers[i], output_ip, output_ip_buffer_size);
+        if (port)
+            return port;
+    }
+    LbNetLog("STUN: failed to obtain mapped address\n");
+    return 0;
+}
+
+void holepunch_stun_keepalive(ENetHost *host)
+{
+    if (!keepalive_available)
+        return;
+    struct StunHeader stun_request;
+    create_stun_header(host, &stun_request, STUN_BINDING_INDICATION);
+    ENetBuffer send_buffer = {.data = &stun_request, .dataLength = sizeof(stun_request)};
+    enet_socket_send(host->socket, &keepalive_address, &send_buffer, 1);
 }
 
 static int send_and_burst(ENetSocket socket_handle, const ENetAddress *address, ENetBuffer *buffer)

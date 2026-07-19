@@ -26,6 +26,8 @@ extern "C" {
 #endif
 
 int port_forward_add_mapping(uint16_t port);
+int port_forward_add_ipv6_pinhole(const char *address, uint16_t port);
+uint16_t port_forward_update(void);
 void port_forward_remove_mapping(void);
 
 #ifdef __cplusplus
