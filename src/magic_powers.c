@@ -70,6 +70,9 @@ extern "C" {
 /******************************************************************************/
 const long power_sight_close_instance_time[] = {4, 4, 5, 5, 6, 6, 7, 7, 8};
 
+#define HAND_PICKUP_DELAY 2
+#define HAND_SLAP_DELAY 3
+
 unsigned char destroy_effect[][9] = {
     {'X','X','X','X','O','X','X','X','X',},//power_level=0
     {'X','X','X','X',' ','X','X','X','X',},
@@ -97,6 +100,18 @@ static TbResult magic_use_power_obey         (PowerKind power_kind, PlayerNumber
 static TbResult magic_use_power_hold_audience(PowerKind power_kind, PlayerNumber plyr_idx, struct Thing *thing, MapSubtlCoord stl_x, MapSubtlCoord stl_y, KeepPwrLevel power_level, unsigned long mod_flags);
 static TbResult magic_use_power_armageddon   (PowerKind power_kind, PlayerNumber plyr_idx, struct Thing *thing, MapSubtlCoord stl_x, MapSubtlCoord stl_y, KeepPwrLevel power_level, unsigned long mod_flags);
 static TbResult magic_use_power_tunneller    (PowerKind power_kind, PlayerNumber plyr_idx, struct Thing *thing, MapSubtlCoord stl_x, MapSubtlCoord stl_y, KeepPwrLevel power_level, unsigned long mod_flags);
+
+static TbResult schedule_hand_action(struct PlayerInfo *player, struct Thing *thing, PowerKind power_kind, GameTurnDelta delay)
+{
+    if (player->hand_action != PwrK_None) {
+        return Lb_OK;
+    }
+    player->hand_action = power_kind;
+    player->hand_action_thing_idx = thing->index;
+    player->hand_action_thing_creation = thing->creation_turn;
+    player->hand_action_turn = get_gameturn() + delay;
+    return Lb_SUCCESS;
+}
 
 typedef TbResult (*Magic_use_Func)(PowerKind power_kind, PlayerNumber plyr_idx, struct Thing *thing, MapSubtlCoord stl_x, MapSubtlCoord stl_y, KeepPwrLevel power_level, unsigned long mod_flags);
 
@@ -689,6 +704,93 @@ void slap_creature(struct PlayerInfo *player, struct Thing *thing)
     play_creature_sound(thing, CrSnd_Slap, 3, 0);
 }
 
+static void execute_power_slap(struct PlayerInfo *player, struct Thing *thing)
+{
+    struct PowerConfigStats *powerst = get_power_model_stats(PwrK_SLAP);
+    struct Camera *camera = get_player_active_camera(player);
+    struct Coord3d pos;
+    struct Dungeon *dungeon = get_players_dungeon(player);
+    struct Thing *efftng;
+    dungeon->lvstats.num_slaps++;
+    switch (thing->class_id) {
+    case TCls_Creature:
+        if (creature_under_spell_effect(thing, CSAfF_Freeze)) {
+            kill_creature(thing, INVALID_THING, thing->owner, CrDed_Default);
+            return;
+        }
+        slap_creature(player, thing);
+        pos = thing->mappos;
+        pos.z.val += thing->clipbox_size_z >> 1;
+        if (creature_model_bleeds(thing->model)) {
+            create_effect(&pos, TngEff_HitBleedingUnit, thing->owner);
+        }
+        thing_play_sample(thing, powerst->select_sound_idx, NORMAL_PITCH, 0, 3, 0, 3, FULL_LOUDNESS);
+        if (camera != NULL) {
+            thing->veloc_base.x.val += distance_with_angle_to_coord_x(64, camera->rotation_angle_x);
+            thing->veloc_base.y.val += distance_with_angle_to_coord_y(64, camera->rotation_angle_x);
+        }
+        return;
+    case TCls_Shot:
+        if ((get_shot_model_stats(thing->model)->model_flags & ShMF_Boulder) == 0) {
+            detonate_shot(thing, true);
+            return;
+        }
+        if (camera != NULL) {
+            thing->move_angle_xy = camera->rotation_angle_x;
+        }
+        if (thing->model != ShM_SolidBoulder) {
+            thing->health -= game.conf.rules[thing->owner].gameplay.boulder_reduce_health_slap;
+        }
+        return;
+    case TCls_Trap:
+        activate_trap_by_slap(player, thing);
+        dungeon = get_dungeon(thing->owner);
+        if (!dungeon_invalid(dungeon)) {
+            dungeon->trap_info.activated[thing->trap.flag_number]++;
+            if (thing->trap.flag_number > 0) {
+                memcpy(&dungeon->last_trap_event_location, &thing->mappos, sizeof(struct Coord3d));
+            }
+        }
+        process_trap_charge(thing);
+        return;
+    case TCls_Object:
+        efftng = create_effect(&thing->mappos, TngEff_Dummy, thing->owner);
+        if (!thing_is_invalid(efftng)) {
+            thing_play_sample(efftng, powerst->select_sound_idx, NORMAL_PITCH, 0, 3, 0, 3, FULL_LOUDNESS);
+        }
+        slap_object(thing);
+        return;
+    }
+}
+
+static void process_hand_action(struct PlayerInfo *player)
+{
+    if ((player->hand_action == PwrK_None) || (get_gameturn() < player->hand_action_turn)) {
+        return;
+    }
+    PowerKind power_kind = player->hand_action;
+    struct Thing *thing = thing_get(player->hand_action_thing_idx);
+    GameTurn thing_creation = player->hand_action_thing_creation;
+    player->hand_action = PwrK_None;
+    player->hand_action_thing_idx = 0;
+    player->hand_action_thing_creation = 0;
+    player->hand_action_turn = 0;
+    if (!thing_exists(thing) || (thing->creation_turn != thing_creation)) {
+        return;
+    }
+    if (power_kind == PwrK_HAND) {
+        if (!power_hand_is_full(player) && can_thing_be_picked_up_by_player(thing, player->id_number) && place_thing_in_power_hand(thing, player->id_number)) {
+            lua_on_pick_up(thing, player->id_number);
+        }
+    } else if ((power_kind == PwrK_SLAP) && thing_slappable(thing, player->id_number)) {
+        lua_on_slap(thing, player->id_number);
+        if (!thing_exists(thing) || (thing->creation_turn != thing_creation) || !thing_slappable(thing, player->id_number)) {
+            return;
+        }
+        execute_power_slap(player, thing);
+    }
+}
+
 TbBool can_cast_power_at_xy(PlayerNumber plyr_idx, PowerKind pwkind, MapSubtlCoord stl_x, MapSubtlCoord stl_y, unsigned long allow_flags)
 {
     struct Map *mapblk;
@@ -1205,15 +1307,10 @@ static TbResult magic_use_power_hold_audience(PowerKind power_kind, PlayerNumber
 
 static TbResult magic_use_power_hand(PowerKind power_kind, PlayerNumber plyr_idx, struct Thing *thing, MapSubtlCoord stl_x, MapSubtlCoord stl_y, KeepPwrLevel power_level, unsigned long mod_flags)
 {
-    if (power_hand_is_full(get_player(plyr_idx)))
+    struct PlayerInfo *player = get_player(plyr_idx);
+    if (power_hand_is_full(player))
         return Lb_FAIL;
-    else if (place_thing_in_power_hand(thing, plyr_idx))
-    {
-        lua_on_pick_up(thing, plyr_idx);
-        return Lb_SUCCESS;
-    }
-    else
-        return Lb_FAIL;
+    return schedule_hand_action(player, thing, PwrK_HAND, HAND_PICKUP_DELAY);
 }
 
 static TbResult magic_use_power_destroy_walls(PowerKind power_kind, PlayerNumber plyr_idx, struct Thing *thing, MapSubtlCoord stl_x, MapSubtlCoord stl_y, KeepPwrLevel power_level, unsigned long mod_flags)
@@ -1801,20 +1898,15 @@ static TbResult magic_use_power_slap_thing(PowerKind power_kind, PlayerNumber pl
 {
     struct PlayerInfo *player;
     struct Dungeon *dungeon;
-    lua_on_slap(thing, plyr_idx);
     if (!thing_exists(thing)) {
         return Lb_FAIL;
     }
     player = get_player(plyr_idx);
     dungeon = get_dungeon(player->id_number);
-    if ((player->instance_num == PI_Whip) || (get_gameturn() - dungeon->last_creature_dropped_gameturn <= 10)) {
+    if (get_gameturn() - dungeon->last_creature_dropped_gameturn <= 10) {
         return Lb_OK;
     }
-    player->influenced_thing_idx = thing->index;
-    player->influenced_thing_creation = thing->creation_turn;
-    set_player_instance(player, PI_Whip, 0);
-    dungeon->lvstats.num_slaps++;
-    return Lb_SUCCESS;
+    return schedule_hand_action(player, thing, PwrK_SLAP, HAND_SLAP_DELAY);
 }
 
 static TbResult magic_use_power_possess_thing(PowerKind power_kind, PlayerNumber plyr_idx, struct Thing *thing, MapSubtlCoord stl_x, MapSubtlCoord stl_y, KeepPwrLevel power_level, unsigned long mod_flags)
@@ -2008,6 +2100,7 @@ void process_dungeon_power_magic(void)
         player = get_player(i);
         if (player_exists(player))
         {
+            process_hand_action(player);
             if (player_uses_power_call_to_arms(i))
             {
                 process_magic_power_call_to_arms(i);
@@ -2235,11 +2328,10 @@ TbResult magic_use_power_on_level(PlayerNumber plyr_idx, PowerKind pwkind,
     return magic_use_power_direct(plyr_idx,pwkind,power_level,0,0,INVALID_THING,mod_flags);
 }
 
-void directly_cast_spell_on_thing(PlayerNumber plyr_idx, PowerKind pwkind, ThingIndex thing_idx, KeepPwrLevel power_level)
+TbResult directly_cast_spell_on_thing(PlayerNumber plyr_idx, PowerKind pwkind, ThingIndex thing_idx, KeepPwrLevel power_level)
 {
-    struct Thing *thing;
-    thing = thing_get(thing_idx);
-    magic_use_available_power_on_thing(plyr_idx, pwkind, power_level,
+    struct Thing *thing = thing_get(thing_idx);
+    return magic_use_available_power_on_thing(plyr_idx, pwkind, power_level,
         thing->mappos.x.stl.num, thing->mappos.y.stl.num, thing, PwMod_Default);
 }
 

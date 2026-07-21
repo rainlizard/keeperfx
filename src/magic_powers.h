@@ -75,7 +75,7 @@ TbResult magic_use_available_power_on_thing(PlayerNumber plyr_idx, PowerKind spl
 TbResult magic_use_available_power_on_subtile(PlayerNumber plyr_idx, PowerKind spl_idx,
     KeepPwrLevel power_level, MapSubtlCoord stl_x, MapSubtlCoord stl_y, unsigned long allow_flags, unsigned long mod_flags);
 TbResult magic_use_available_power_on_level(PlayerNumber plyr_idx, PowerKind spl_idx, KeepPwrLevel power_level, unsigned long allow_flags);
-void directly_cast_spell_on_thing(PlayerNumber plyr_idx, PowerKind spl_idx, ThingIndex thing_idx, KeepPwrLevel power_level);
+TbResult directly_cast_spell_on_thing(PlayerNumber plyr_idx, PowerKind spl_idx, ThingIndex thing_idx, KeepPwrLevel power_level);
 
 TbResult magic_use_power_on_thing(PlayerNumber plyr_idx, PowerKind spl_idx,
     KeepPwrLevel power_level, MapSubtlCoord stl_x, MapSubtlCoord stl_y, struct Thing *thing, unsigned long allow_flags);

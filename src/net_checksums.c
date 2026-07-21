@@ -110,7 +110,8 @@ TbBigChecksum get_thing_checksum(const struct Thing* thing) {
     return checksum;
 }
 
-static TbBigChecksum compute_player_checksum(struct PlayerInfo *player) {
+static TbBigChecksum compute_player_checksum(struct PlayerInfo *player)
+{
     struct Camera* camera = get_player_active_camera(player);
     if ((player->allocflags & PlaF_CompCtrl) != 0 || camera == NULL) {
         return 0;
@@ -118,6 +119,10 @@ static TbBigChecksum compute_player_checksum(struct PlayerInfo *player) {
     TbBigChecksum checksum = 0;
     CHECKSUM_ADD(checksum, player->instance_remain_turns);
     CHECKSUM_ADD(checksum, player->instance_num);
+    CHECKSUM_ADD(checksum, player->hand_action);
+    CHECKSUM_ADD(checksum, player->hand_action_thing_idx);
+    CHECKSUM_ADD(checksum, player->hand_action_thing_creation);
+    CHECKSUM_ADD(checksum, player->hand_action_turn);
     if (player->victory_state == VicS_Undecided) {
         CHECKSUM_ADD(checksum, camera->mappos.x.val);
         CHECKSUM_ADD(checksum, camera->mappos.y.val);

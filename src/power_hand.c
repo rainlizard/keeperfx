@@ -1344,29 +1344,6 @@ void delete_power_hand(PlayerNumber owner)
     delete_thing_structure(thing, 0);
 }
 
-long prepare_thing_for_power_hand(unsigned short tng_idx, PlayerNumber plyr_idx)
-{
-    struct PlayerInfo *player;
-    struct Dungeon *dungeon;
-    player = get_player(plyr_idx);
-    dungeon = get_dungeon(player->id_number);
-    if (player->hand_thing_idx == 0) {
-        create_power_hand(plyr_idx);
-    }
-    if (dungeon->num_things_in_hand >= game.conf.rules[plyr_idx].gameplay.max_things_in_hand) {
-      return 0;
-    }
-    struct Thing *thing;
-    thing = thing_get(tng_idx);
-    player->influenced_thing_idx = thing->index;
-    player->influenced_thing_creation = thing->creation_turn;
-    set_player_instance(player, PI_Grab, 0);
-    if (thing_is_creature(thing)) {
-        clear_creature_instance(thing);
-    }
-    return 1;
-}
-
 void add_creature_to_sacrifice_list(PlayerNumber plyr_idx, long model, CrtrExpLevel exp_level)
 {
   struct Dungeon *dungeon;
@@ -1459,24 +1436,10 @@ TbResult use_power_hand(PlayerNumber plyr_idx, MapSubtlCoord stl_x, MapSubtlCoor
         return Lb_FAIL;
     }
     thing = thing_get(tng_idx);
-    if (!thing_exists(thing))
-    {
-        thing = INVALID_THING;
-    } else
-    if (!can_thing_be_picked_up_by_player(thing, plyr_idx))
-    {
-        thing = INVALID_THING;
+    if (!thing_exists(thing) || !can_thing_be_picked_up_by_player(thing, plyr_idx)) {
+        thing = thing_get(player->thing_under_hand);
     }
-    if (thing_is_invalid(thing))
-    {
-        if (player->thing_under_hand > 0)
-            thing = thing_get(player->thing_under_hand);
-    }
-    if (!thing_exists(thing)) {
-        return Lb_FAIL;
-    }
-    if (!can_thing_be_picked_up_by_player(thing, plyr_idx))
-    {
+    if (!thing_exists(thing) || !can_thing_be_picked_up_by_player(thing, plyr_idx)) {
         return Lb_FAIL;
     }
     if (thing_is_special_box(thing))
@@ -1484,11 +1447,14 @@ TbResult use_power_hand(PlayerNumber plyr_idx, MapSubtlCoord stl_x, MapSubtlCoor
         activate_dungeon_special(thing, player);
         return Lb_OK;
     }
-    if (!is_power_available(plyr_idx, PwrK_HAND)) {
-        return Lb_FAIL;
+    TbResult result = magic_use_available_power_on_thing(plyr_idx, PwrK_HAND, 0, stl_x, stl_y, thing, PwMod_Default);
+    if (result == Lb_SUCCESS) {
+        if (player->hand_thing_idx == 0) {
+            create_power_hand(plyr_idx);
+        }
+        set_player_instance(player, PI_Grab, 0);
     }
-    prepare_thing_for_power_hand(thing->index, plyr_idx);
-    return Lb_SUCCESS;
+    return result;
 }
 
 void stop_creatures_around_hand(PlayerNumber plyr_idx, MapSubtlCoord stl_x,  MapSubtlCoord stl_y)

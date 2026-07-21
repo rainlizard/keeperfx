@@ -46,7 +46,6 @@
 #include "player_utils.h"
 #include "config_players.h"
 #include "room_workshop.h"
-#include "magic_powers.h"
 #include "gui_frontmenu.h"
 #include "gui_soundmsgs.h"
 #include "engine_arrays.h"
@@ -72,7 +71,6 @@ extern "C" {
 #endif
 /******************************************************************************/
 long pinstfs_hand_grab(struct PlayerInfo *player, int32_t *n);
-long pinstfe_hand_grab(struct PlayerInfo *player, int32_t *n);
 long pinstfs_hand_drop(struct PlayerInfo *player, int32_t *n);
 long pinstfe_hand_drop(struct PlayerInfo *player, int32_t *n);
 long pinstfs_hand_whip(struct PlayerInfo *player, int32_t *n);
@@ -110,7 +108,7 @@ long pinstfe_zoom_to_position(struct PlayerInfo *player, int32_t *n);
 
 struct PlayerInstanceInfo player_instance_info[PLAYER_INSTANCES_COUNT] = {
   { 0, 0, NULL,                                 NULL,                           NULL,                                {0}, {0}, 0, 0}, // PI_Unset
-  { 3, 1, pinstfs_hand_grab,                    NULL,                           pinstfe_hand_grab,                   {0}, {0}, 0, 0}, // PI_Grab
+  { 3, 1, pinstfs_hand_grab,                    NULL,                           NULL,                                {0}, {0}, 0, 0}, // PI_Grab
   { 3, 1, pinstfs_hand_drop,                    NULL,                           pinstfe_hand_drop,                   {0}, {0}, 0, 0}, // PI_Drop
   { 4, 0, pinstfs_hand_whip,                    NULL,                           pinstfe_hand_whip,                   {0}, {0}, 0, 0}, // PI_Whip
   { 5, 0, pinstfs_hand_whip_end,                NULL,                           pinstfe_hand_whip_end,               {0}, {0}, 0, 0}, // PI_WhipEnd
@@ -145,31 +143,9 @@ long pinstfs_hand_grab(struct PlayerInfo *player, int32_t *n)
     return 0;
 }
 
-long pinstfe_hand_grab(struct PlayerInfo *player, int32_t *n)
-{
-    SYNCDBG(8,"Starting");
-    struct Thing* dsttng = thing_get(player->influenced_thing_idx);
-    if (dsttng->creation_turn != player->influenced_thing_creation) {
-        WARNLOG("The thing index %d is no longer the same",(int)player->influenced_thing_idx);
-        player->influenced_thing_creation = 0;
-        player->influenced_thing_idx = 0;
-        return 0;
-    }
-    player->influenced_thing_creation = 0;
-    player->influenced_thing_idx = 0;
-    if (magic_use_available_power_on_thing(player->id_number, PwrK_HAND, 0,dsttng->mappos.x.stl.num, dsttng->mappos.y.stl.num, dsttng, PwMod_Default) == Lb_FAIL) {
-        WARNLOG("Cannot pick up %s index %d",thing_model_name(dsttng),(int)dsttng->index);
-        return 0;
-    }
-    return 0;
-}
-
 long pinstfs_hand_drop(struct PlayerInfo *player, int32_t *n)
 {
-    struct Dungeon* dungeon = get_players_dungeon(player);
     struct Thing* thing = thing_get(player->hand_thing_idx);
-    player->influenced_thing_idx = dungeon->things_in_hand[0];
-    player->influenced_thing_creation = thing->creation_turn;
     if (thing_exists(thing))
     {
         set_power_hand_graphic(player->id_number, HndA_Pickup);
@@ -184,8 +160,6 @@ long pinstfe_hand_drop(struct PlayerInfo *player, int32_t *n)
     {
         set_power_hand_graphic(player->id_number, HndA_Hover);
     }
-    player->influenced_thing_idx = 0;
-    player->influenced_thing_creation = 0;
     return 0;
 }
 
@@ -201,94 +175,8 @@ long pinstfs_hand_whip(struct PlayerInfo *player, int32_t *n)
 
 long pinstfe_hand_whip(struct PlayerInfo *player, int32_t *n)
 {
-    struct PowerConfigStats* powerst = get_power_model_stats(PwrK_SLAP);
-    struct Thing* thing = thing_get(player->influenced_thing_idx);
-    struct TrapConfigStats *trapst;
-    struct ShotConfigStats* shotst;
-    if (!thing_exists(thing) || (thing->creation_turn != player->influenced_thing_creation) || (!thing_slappable(thing, player->id_number)))
-    {
-        player->influenced_thing_creation = 0;
-        player->influenced_thing_idx = 0;
-        return 0;
-  }
-  switch (thing->class_id)
-  {
-  case TCls_Creature:
-  {
-      struct Coord3d pos;
-      if (creature_under_spell_effect(thing, CSAfF_Freeze))
-      {
-          kill_creature(thing, INVALID_THING, thing->owner, CrDed_Default);
-      } else
-      {
-          slap_creature(player, thing);
-          pos.x.val = thing->mappos.x.val;
-          pos.y.val = thing->mappos.y.val;
-          pos.z.val = thing->mappos.z.val + (thing->clipbox_size_z >> 1);
-          if ( creature_model_bleeds(thing->model) )
-              create_effect(&pos, TngEff_HitBleedingUnit, thing->owner);
-          thing_play_sample(thing, powerst->select_sound_idx, NORMAL_PITCH, 0, 3, 0, 3, FULL_LOUDNESS);
-          struct Camera* cam = get_player_active_camera(player);
-          if (cam != NULL)
-          {
-            thing->veloc_base.x.val += distance_with_angle_to_coord_x(64, cam->rotation_angle_x);
-            thing->veloc_base.y.val += distance_with_angle_to_coord_y(64, cam->rotation_angle_x);
-          }
-      }
-      break;
-  }
-  case TCls_Shot:
-      shotst = get_shot_model_stats(thing->model);
-      if (shotst->model_flags & ShMF_Boulder)
-      {
-          struct Camera* camera = get_player_active_camera(player);
-          if (camera != NULL)
-          {
-              thing->move_angle_xy = camera->rotation_angle_x;
-          }
-          if (thing->model != ShM_SolidBoulder) // TODO CONFIG shot model dependency, make config option instead.
-          {
-              thing->health -= game.conf.rules[thing->owner].gameplay.boulder_reduce_health_slap;
-          }
-      }
-      else
-      {
-          detonate_shot(thing,true);
-      }
-      break;
-  case TCls_Trap:
-      trapst = get_trap_model_stats(thing->model);
-      if ((trapst->slappable > 0) && trap_is_active(thing))
-      {
-          activate_trap_by_slap(player, thing);
-
-          struct Dungeon* dungeon = get_dungeon(thing->owner);
-          if (!dungeon_invalid(dungeon))
-          {
-              dungeon->trap_info.activated[thing->trap.flag_number]++;
-              if (thing->trap.flag_number > 0)
-              {
-                  memcpy(&dungeon->last_trap_event_location, &thing->mappos, sizeof(struct Coord3d));
-              }
-          }
-          process_trap_charge(thing);
-      }
-      break;
-      case TCls_Object:
-      {
-          struct Thing* efftng;
-          if (object_is_slappable_by_player(thing, player->id_number))
-          {
-            efftng = create_effect(&thing->mappos, TngEff_Dummy, thing->owner);
-            if (!thing_is_invalid(efftng))
-              thing_play_sample(efftng, powerst->select_sound_idx, NORMAL_PITCH, 0, 3, 0, 3, FULL_LOUDNESS);
-            slap_object(thing);
-          }
-          break;
-      }
-  }
-  set_player_instance(player, PI_WhipEnd, false);
-  return 0;
+    set_player_instance(player, PI_WhipEnd, false);
+    return 0;
 }
 
 long pinstfs_hand_whip_end(struct PlayerInfo *player, int32_t *n)

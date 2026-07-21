@@ -933,9 +933,13 @@ TbBool process_players_global_packet_action(PlayerNumber plyr_idx)
       turn_off_power_sight_of_evil(plyr_idx);
       return false;
   case PckA_UsePwrOnThing:
-      i = get_power_overcharge_level(player);
-      directly_cast_spell_on_thing(plyr_idx, pckt->actn_par1, pckt->actn_par2, i);
+  {
+      TbResult result = directly_cast_spell_on_thing(plyr_idx, pckt->actn_par1, pckt->actn_par2, get_power_overcharge_level(player));
+      if ((pckt->actn_par1 == PwrK_SLAP) && (result == Lb_SUCCESS)) {
+          set_player_instance(player, PI_Whip, 0);
+      }
       return 0;
+  }
   case PckA_PlyrToggleAlly:
       if (!is_player_ally_locked(plyr_idx, pckt->actn_par1))
       {
