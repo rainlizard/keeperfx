@@ -33,9 +33,7 @@
 #include <stdlib.h>
 #include "post_inc.h"
 
-#define STR_(x) #x
-#define STR(x) STR_(x)
-#define MATCHMAKING_VERSION STR(VER_MAJOR) "." STR(VER_MINOR) "." STR(VER_RELEASE)
+#define MATCHMAKING_VERSION VER_STRING
 
 #define WEBSOCKET_BUFFER_SIZE         8192
 #define WEBSOCKET_RECEIVE_TIMEOUT_MS  3000
