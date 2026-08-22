@@ -28,6 +28,7 @@ endforeach()
 # Override via -DBUILD_NUMBER=<n> -DPACKAGE_SUFFIX=<s>; used for the CPack name.
 set(BUILD_NUMBER   "${VER_BUILD}" CACHE STRING "Monotonic build number")
 set(PACKAGE_SUFFIX ""             CACHE STRING "Distribution suffix (e.g. Alpha, Release)")
+set(VER_BUILD      "${BUILD_NUMBER}")
 set(VER_STRING     "${VER_MAJOR}.${VER_MINOR}.${VER_RELEASE}.${BUILD_NUMBER} ${PACKAGE_SUFFIX}")
 set(GIT_REVISION   "${COMMIT_ID}")
 
