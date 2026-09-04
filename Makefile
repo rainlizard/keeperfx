@@ -430,6 +430,10 @@ HVLOGOBJS = $(subst obj/,obj/hvlog/,$(OBJS))
 STD_MAIN_OBJ = $(subst obj/,obj/std/,$(MAIN_OBJ))
 HVLOG_MAIN_OBJ = $(subst obj/,obj/hvlog/,$(MAIN_OBJ))
 
+$(filter %.o,$(STDOBJS) $(STD_MAIN_OBJ)): .EXTRA_PREREQS = obj/std/.build_config
+$(filter %.o,$(HVLOGOBJS) $(HVLOG_MAIN_OBJ)): .EXTRA_PREREQS = obj/hvlog/.build_config
+$(TESTS_OBJ) $(CU_OBJS): .EXTRA_PREREQS = obj/tests/.build_config
+
 
 # allow extracting files from archives, replacing pre-existing ones
 ENABLE_EXTRACT ?= 1
@@ -494,7 +498,7 @@ include prebuilds.mk
 .PHONY: package clean-package deep-clean-package
 .PHONY: tools clean-tools deep-clean-tools
 .PHONY: clean-libexterns deep-clean-libexterns
-.PHONY: tests cppcheck
+.PHONY: tests cppcheck FORCE
 
 # dependencies tracking
 -include $(filter %.d,$(STDOBJS:%.o=%.d) $(STD_MAIN_OBJ:%.o=%.d))
@@ -503,6 +507,12 @@ include prebuilds.mk
 
 
 all: standard
+
+FORCE:
+
+obj/%/.build_config: FORCE
+	$(ECHO) '$(CPP) $(CXXFLAGS) $(CC) $(CFLAGS)' > "$@.tmp"
+	cmp -s "$@.tmp" "$@" || $(MV) "$@.tmp" "$@"; $(RM) "$@.tmp"
 
 standard: CXXFLAGS += $(STLOGFLAGS)
 standard: CFLAGS += $(STLOGFLAGS)
@@ -638,10 +648,10 @@ define BUILD_RESOURCE_CMD
 	-$(ECHO) ' '
 endef
 
-obj/std/%.res: res/%.rc res/keeperfx_icon.ico | $(GENSRC)
+obj/std/%.res: res/%.rc res/keeperfx_icon.ico src/version.h $(GENSRC)
 	$(BUILD_RESOURCE_CMD)
 
-obj/hvlog/%.res: res/%.rc res/keeperfx_icon.ico | $(GENSRC)
+obj/hvlog/%.res: res/%.rc res/keeperfx_icon.ico src/version.h $(GENSRC)
 	$(BUILD_RESOURCE_CMD)
 
 
