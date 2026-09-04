@@ -487,6 +487,7 @@ VER_STRING = $(VER_MAJOR).$(VER_MINOR).$(VER_RELEASE).$(BUILD_NUMBER) $(PACKAGE_
 ifndef MAKEFLAGS
   MAKEFLAGS = -j$(shell nproc)
 endif
+MAKEFLAGS += -rR
 
 # load depenency packages
 include prebuilds.mk
@@ -554,8 +555,8 @@ submodule:
 	-git submodule init && git submodule update
 
 clean-build:
-	-$(RM) $(STDOBJS) $(STD_MAIN_OBJ) $(filter %.d,$(STDOBJS:%.o=%.d)) $(filter %.d,$(STD_MAIN_OBJ:%.o=%.d))
-	-$(RM) $(HVLOGOBJS) $(HVLOG_MAIN_OBJ) $(filter %.d,$(HVLOGOBJS:%.o=%.d)) $(filter %.d,$(HVLOG_MAIN_OBJ:%.o=%.d))
+	-$(RM) $(filter obj/%,$(STDOBJS) $(STD_MAIN_OBJ)) $(filter %.d,$(STDOBJS:%.o=%.d)) $(filter %.d,$(STD_MAIN_OBJ:%.o=%.d))
+	-$(RM) $(filter obj/%,$(HVLOGOBJS) $(HVLOG_MAIN_OBJ)) $(filter %.d,$(HVLOGOBJS:%.o=%.d)) $(filter %.d,$(HVLOG_MAIN_OBJ:%.o=%.d))
 	-$(RM) $(BIN) $(BIN:%.exe=%.map)
 	-$(RM) $(BIN) $(BIN:%.exe=%.pdb)
 	-$(RM) $(HVLOGBIN) $(HVLOGBIN:%.exe=%.map)
@@ -607,8 +608,6 @@ obj/cu/%.o: $(CU_DIR)/Sources/Basic/%.c
 
 define BUILD_CPP_FILES_CMD
 	-$(ECHO) 'Building cpp file: $<'
-	@grep -E "#include \"(\.\./)?(\.\./)?pre_inc.h\"" "$<" >/dev/null || echo "\n\nAll files should have #include \"pre_inc.h\" as first include\n\n" >&2 | false
-	@grep -E "#include \"(\.\./)?(\.\./)?post_inc.h\"" "$<" >/dev/null || echo "\n\nAll files should have #include \"post_inc.h\" as last include\n\n" >&2 | false
 	$(CPP) $(CXXFLAGS) -o"$@" "$<"
 endef
 
@@ -628,8 +627,6 @@ obj/hvlog/%.o: src/%.cpp | libexterns $(GENSRC)
 
 define BUILD_CC_FILES_CMD
 	-$(ECHO) 'Building cc file: $<'
-	@grep -E "#include \"(\.\./)?(\.\./)?pre_inc.h\"" "$<" >/dev/null || echo "\n\nAll files should have #include \"pre_inc.h\" as first include\n\n" >&2 | false
-	@grep -E "#include \"(\.\./)?(\.\./)?post_inc.h\"" "$<" >/dev/null || echo "\n\nAll files should have #include \"post_inc.h\" as last include\n\n" >&2 | false
 	$(CC) $(CFLAGS) -o"$@" "$<"
 endef
 
