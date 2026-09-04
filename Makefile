@@ -507,7 +507,10 @@ include prebuilds.mk
 -include $(filter %.d,$(TESTS_OBJ:%.o=%.d) $(CU_OBJS:%.o=%.d) $(FTEST_OBJS:%.o=%.d))
 
 
+BUILD_START := $(shell date +%s.%N)
+
 all: standard
+	@printf "\033[97mCompiled in: %0.2f seconds\033[0m\n" $$(awk "BEGIN {print $$(date +%s.%N) - $(BUILD_START)}")
 
 FORCE:
 
