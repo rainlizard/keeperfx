@@ -57,6 +57,12 @@ CP       = cp -f
 MKDIR    = mkdir -p
 ECHO     = @echo
 
+# Use ccache when available to speed up recompilation
+ifneq (,$(shell command -v ccache 2> /dev/null))
+CPP      := ccache $(CPP)
+CC       := ccache $(CC)
+endif
+
 # Names of target binary files
 BIN      = bin/keeperfx$(EXEEXT)
 TEST_BIN = bin/tests$(EXEEXT)
@@ -429,7 +435,7 @@ HVLOG_MAIN_OBJ = $(subst obj/,obj/hvlog/,$(MAIN_OBJ))
 ENABLE_EXTRACT ?= 1
 
 # flags to generate dependency files
-DEPFLAGS = -MMD -MP -MF"$(@:%.o=%.d)" -MT"$(@:%.o=%.d)" -DSPNG_STATIC=1 -DAL_LIBTYPE_STATIC
+DEPFLAGS = -MMD -MP -MF"$(@:%.o=%.d)" -MT"$@" -DSPNG_STATIC=1 -DAL_LIBTYPE_STATIC
 # other flags to include while compiling
 INCFLAGS =
 # code optimization and debugging flags
@@ -491,25 +497,12 @@ include prebuilds.mk
 .PHONY: tests cppcheck
 
 # dependencies tracking
--include $(filter %.d,$(STDOBJS:%.o=%.d))
--include $(filter %.d,$(HVLOGOBJS:%.o=%.d))
+-include $(filter %.d,$(STDOBJS:%.o=%.d) $(STD_MAIN_OBJ:%.o=%.d))
+-include $(filter %.d,$(HVLOGOBJS:%.o=%.d) $(HVLOG_MAIN_OBJ:%.o=%.d))
+-include $(filter %.d,$(TESTS_OBJ:%.o=%.d) $(CU_OBJS:%.o=%.d) $(FTEST_OBJS:%.o=%.d))
 
 
-# 'make all' calculates the current checksum of all .h and .hpp files, storing the checksum in a file. Then it decides whether to run 'make clean' or 'make standard' based on whether any .h and .hpp files have been altered
-HEADER_CHECKSUM_FILE=.header_checksum
-
-all:
-	@start_time=$$(date +%s.%N); \
-	get_header_cksum=$$(find ./src/ -type f \( -name "*.h" -o -name "*.hpp" \) -print0 | xargs -0 cksum | LC_ALL=C sort | cksum | awk '{print $$1}'); \
-	current_checksum=$$(echo $$get_header_cksum $(DEBUG) | cksum | awk '{print $$1}'); \
-	if [ ! -f $(HEADER_CHECKSUM_FILE) ] || [ "$$(cat $(HEADER_CHECKSUM_FILE))" != "$$current_checksum" ]; then \
-		$(MAKE) clean; \
-	fi; \
-	$(MAKE) standard || exit 1; \
-	echo "$$current_checksum" > $(HEADER_CHECKSUM_FILE); \
-	end_time=$$(date +%s.%N); \
-	duration=$$(awk "BEGIN {print $$end_time - $$start_time}"); \
-	printf "\033[97mCompiled in: %0.2f seconds\033[0m\n" $$duration;
+all: standard
 
 standard: CXXFLAGS += $(STLOGFLAGS)
 standard: CFLAGS += $(STLOGFLAGS)
@@ -590,7 +583,7 @@ obj/std/centitoml/toml_api.o obj/hvlog/centitoml/toml_api.o: deps/centitoml/toml
 	$(CC) $(CFLAGS) -o"$@" "$<"
 	-$(ECHO) ' '
 
-obj/tests/%.o: src/tests/%.cpp $(GENSRC)
+obj/tests/%.o: src/tests/%.cpp | $(GENSRC)
 	-$(ECHO) 'Building file: $<'
 	$(CPP) $(CXXFLAGS) -I"src/" $(CU_INC) -o"$@" "$<"
 	-$(ECHO) ' '
@@ -610,16 +603,16 @@ define BUILD_CPP_FILES_CMD
 endef
 
 # Pattern rules for src/kfx/lense (must come before general src/%.cpp rule)
-obj/std/%.o: src/kfx/lense/%.cpp libexterns $(GENSRC)
+obj/std/%.o: src/kfx/lense/%.cpp | libexterns $(GENSRC)
 	$(BUILD_CPP_FILES_CMD)
 
-obj/hvlog/%.o: src/kfx/lense/%.cpp libexterns $(GENSRC)
+obj/hvlog/%.o: src/kfx/lense/%.cpp | libexterns $(GENSRC)
 	$(BUILD_CPP_FILES_CMD)
 
-obj/std/%.o: src/%.cpp libexterns $(GENSRC)
+obj/std/%.o: src/%.cpp | libexterns $(GENSRC)
 	$(BUILD_CPP_FILES_CMD)
 
-obj/hvlog/%.o: src/%.cpp libexterns $(GENSRC)
+obj/hvlog/%.o: src/%.cpp | libexterns $(GENSRC)
 	$(BUILD_CPP_FILES_CMD)
 
 
@@ -630,10 +623,10 @@ define BUILD_CC_FILES_CMD
 	$(CC) $(CFLAGS) -o"$@" "$<"
 endef
 
-obj/std/%.o: src/%.c libexterns $(GENSRC)
+obj/std/%.o: src/%.c | libexterns $(GENSRC)
 	$(BUILD_CC_FILES_CMD)
 
-obj/hvlog/%.o: src/%.c libexterns $(GENSRC)
+obj/hvlog/%.o: src/%.c | libexterns $(GENSRC)
 	$(BUILD_CC_FILES_CMD)
 
 
@@ -645,10 +638,10 @@ define BUILD_RESOURCE_CMD
 	-$(ECHO) ' '
 endef
 
-obj/std/%.res: res/%.rc res/keeperfx_icon.ico $(GENSRC)
+obj/std/%.res: res/%.rc res/keeperfx_icon.ico | $(GENSRC)
 	$(BUILD_RESOURCE_CMD)
 
-obj/hvlog/%.res: res/%.rc res/keeperfx_icon.ico $(GENSRC)
+obj/hvlog/%.res: res/%.rc res/keeperfx_icon.ico | $(GENSRC)
 	$(BUILD_RESOURCE_CMD)
 
 
@@ -659,14 +652,14 @@ res/%.ico: res/%016-08bpp.png res/%032-08bpp.png res/%048-08bpp.png res/%064-08b
 	-$(ECHO) ' '
 
 src/ver_defs.h: version.mk Makefile
-	$(ECHO) \#define VER_MAJOR   $(VER_MAJOR) > "$(@D)/tmp"
-	$(ECHO) \#define VER_MINOR   $(VER_MINOR) >> "$(@D)/tmp"
-	$(ECHO) \#define VER_RELEASE $(VER_RELEASE) >> "$(@D)/tmp"
-	$(ECHO) \#define VER_BUILD   $(BUILD_NUMBER) >> "$(@D)/tmp"
-	$(ECHO) \#define VER_STRING  \"$(VER_STRING)\" >> "$(@D)/tmp"
-	$(ECHO) \#define PACKAGE_SUFFIX  \"$(PACKAGE_SUFFIX)\" >> "$(@D)/tmp"
-	$(ECHO) \#define GIT_REVISION  \"`git describe  --always`\" >> "$(@D)/tmp"
-	$(MV) "$(@D)/tmp" "$@"
+	$(ECHO) \#define VER_MAJOR   $(VER_MAJOR) > "$(@D)/tmp_$(@F)"
+	$(ECHO) \#define VER_MINOR   $(VER_MINOR) >> "$(@D)/tmp_$(@F)"
+	$(ECHO) \#define VER_RELEASE $(VER_RELEASE) >> "$(@D)/tmp_$(@F)"
+	$(ECHO) \#define VER_BUILD   $(BUILD_NUMBER) >> "$(@D)/tmp_$(@F)"
+	$(ECHO) \#define VER_STRING  \"$(VER_STRING)\" >> "$(@D)/tmp_$(@F)"
+	$(ECHO) \#define PACKAGE_SUFFIX  \"$(PACKAGE_SUFFIX)\" >> "$(@D)/tmp_$(@F)"
+	$(ECHO) \#define GIT_REVISION  \"`git describe  --always`\" >> "$(@D)/tmp_$(@F)"
+	cmp -s "$(@D)/tmp_$(@F)" "$@" || $(MV) "$(@D)/tmp_$(@F)" "$@"; $(RM) "$(@D)/tmp_$(@F)"
 
 tests: std-before $(TEST_BIN)
 
