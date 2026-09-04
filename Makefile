@@ -562,7 +562,7 @@ clean-build:
 	-$(RM) res/*.ico
 	-$(RM) obj/keeperfx.*
 
-$(BIN): $(GENSRC) $(STDOBJS) $(STD_MAIN_OBJ) std-before
+$(BIN): $(GENSRC) $(STDOBJS) $(STD_MAIN_OBJ) | std-before
 	-$(ECHO) 'Building target: $@'
 	$(CPP) -o "$@" $(STDOBJS) $(STD_MAIN_OBJ) $(LDFLAGS)
 ifdef CV2PDB
@@ -570,7 +570,7 @@ ifdef CV2PDB
 endif
 	-$(ECHO) ' '
 
-$(HVLOGBIN): $(GENSRC) $(HVLOGOBJS) $(HVLOG_MAIN_OBJ) hvlog-before
+$(HVLOGBIN): $(GENSRC) $(HVLOGOBJS) $(HVLOG_MAIN_OBJ) | hvlog-before
 	-$(ECHO) 'Building target: $@'
 	$(CPP) -o "$@" $(HVLOGOBJS) $(HVLOG_MAIN_OBJ) $(LDFLAGS)
 ifdef CV2PDB
@@ -578,7 +578,7 @@ ifdef CV2PDB
 endif
 	-$(ECHO) ' '
 
-$(TEST_BIN): $(GENSRC) $(STDOBJS) $(TESTS_OBJ) $(CU_OBJS) std-before
+$(TEST_BIN): $(GENSRC) $(STDOBJS) $(TESTS_OBJ) $(CU_OBJS) | std-before
 	-$(ECHO) 'Building target: $@'
 	$(CPP) -o "$@" $(TESTS_OBJ) $(STDOBJS) $(CU_OBJS) $(LDFLAGS)
 ifdef CV2PDB
