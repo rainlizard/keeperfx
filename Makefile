@@ -35,7 +35,7 @@ WINDRES  = $(CROSS_COMPILE)windres
 DOXYTOOL = doxygen
 BUILD_NUMBER ?= $(VER_BUILD)
 PACKAGE_SUFFIX ?= Prototype
-CLOCK_SYNC := $(if $(WSL_DISTRO_NAME),$(shell wsl.exe -d "$(WSL_DISTRO_NAME)" -u root -- bash -c 'date -s "$$(powershell.exe -NoProfile -Command Get-Date -Format o)" > /dev/null' && echo ok),not-wsl)
+$(if $(WSL_DISTRO_NAME),$(shell wsl.exe -d "$(WSL_DISTRO_NAME)" -u root -- bash -c 'date -s "$$(powershell.exe -NoProfile -Command Get-Date -Format o)" > /dev/null'))
 BUILD_START := $(shell date +%s.%N)
 PNGTOICO = tools/png2ico/png2ico$(CROSS_EXEEXT)
 PNGTORAW = tools/pngpal2raw/bin/pngpal2raw$(CROSS_EXEEXT)
@@ -218,12 +218,6 @@ endif
 all: standard
 	@duration=$$(awk "BEGIN { print $$(date +%s.%N) - $(BUILD_START) }"); printf '\033[97mCompile completed in %0.2fs\033[0m\n' $$duration
 standard: $(BIN) $(BIN:%.exe=%.map)
-	@printf 'Clock sync:    %s\n' "$(if $(CLOCK_SYNC),$(CLOCK_SYNC),failed)"; \
-	printf 'Build before:  '; date -Ins; \
-	command -v powershell.exe > /dev/null && { printf 'Windows clock: '; powershell.exe -NoProfile -Command 'Get-Date -Format o'; } || true; \
-	printf 'Build after:   '; date -Ins; \
-	printf 'OBJDIR:        %s (%s)\n' "$(OBJDIR)" "$(origin OBJDIR)"; \
-	find Makefile *.mk libexterns src res deps sdl tools bin "$(OBJDIR)" -type f -newermt now -printf '%TY-%Tm-%TdT%TH:%TM:%TS %p\n' 2> /dev/null | sort -r | head -20 | sed 's/^/Future file: /'
 heavylog: $(HVLOGBIN) $(HVLOGBIN:%.exe=%.map)
 $(OBJDIR)/std/%: COMMONFLAGS += $(std_LOGFLAGS)
 $(OBJDIR)/hvlog/%: COMMONFLAGS += $(hvlog_LOGFLAGS)
