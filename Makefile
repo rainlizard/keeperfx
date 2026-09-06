@@ -35,6 +35,7 @@ WINDRES  = $(CROSS_COMPILE)windres
 DOXYTOOL = doxygen
 BUILD_NUMBER ?= $(VER_BUILD)
 PACKAGE_SUFFIX ?= Prototype
+$(if $(WSL_DISTRO_NAME),$(shell wsl.exe -d "$(WSL_DISTRO_NAME)" -u root -- bash -c 'date -s "$$(powershell.exe -NoProfile -Command Get-Date -Format o)" > /dev/null'))
 BUILD_START := $(shell date +%s.%N)
 PNGTOICO = tools/png2ico/png2ico$(CROSS_EXEEXT)
 PNGTORAW = tools/pngpal2raw/bin/pngpal2raw$(CROSS_EXEEXT)
@@ -56,6 +57,7 @@ CC       := $(COMPILER_CACHE) $(CC)
 endif
 CACHE_KEY := $(shell test -w /var/tmp && echo "$(CURDIR)" | cksum | cut -d' ' -f1)
 OBJDIR ?= $(if $(CACHE_KEY),/var/tmp/kfx-$(CACHE_KEY),obj)
+$(if $(filter file,$(origin OBJDIR)),$(shell find "$(OBJDIR)" -type f -newermt now -delete 2> /dev/null))
 BIN      = bin/keeperfx$(EXEEXT)
 TEST_BIN = bin/tests$(EXEEXT)
 HVLOGBIN = bin/keeperfx_hvlog$(EXEEXT)
