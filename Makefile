@@ -56,6 +56,7 @@ CC       := $(COMPILER_CACHE) $(CC)
 endif
 CACHE_KEY := $(shell test -w /var/tmp && echo "$(CURDIR)" | cksum | cut -d' ' -f1)
 OBJDIR ?= $(if $(CACHE_KEY),/var/tmp/kfx-$(CACHE_KEY),obj)
+$(if $(filter file,$(origin OBJDIR)),$(shell find "$(OBJDIR)" -type f -newermt now -delete 2> /dev/null))
 BIN      = bin/keeperfx$(EXEEXT)
 TEST_BIN = bin/tests$(EXEEXT)
 HVLOGBIN = bin/keeperfx_hvlog$(EXEEXT)
