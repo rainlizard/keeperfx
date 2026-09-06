@@ -164,6 +164,7 @@ std_LOGFLAGS = -DBFDEBUG_LEVEL=0
 hvlog_LOGFLAGS = -DBFDEBUG_LEVEL=10
 WARNFLAGS = \
 	-Wall \
+	-W \
 	-Wshadow \
 	-Werror \
 	-Wno-sign-compare \
