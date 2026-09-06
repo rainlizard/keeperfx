@@ -1177,9 +1177,12 @@ short load_configuration(void)
  */
 void process_cmdline_overrides(void)
 {
+  if (flag_is_set(start_params.operation_flags, GOF_SingleLevel)) {
+    clear_flag(start_params.startup_flags, SFlg_Legal | SFlg_FX | SFlg_Intro);
+    features_enabled |= Ft_SkipHeartZoom;
+  }
   // Use CD for music rather than OGG files
-  if (start_params.overrides[Clo_CDMusic])
-  {
+  if (start_params.overrides[Clo_CDMusic]) {
     features_enabled &= ~Ft_NoCdMusic;
   }
 }
