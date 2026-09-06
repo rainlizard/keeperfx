@@ -142,7 +142,7 @@ const struct NamedCommand conf_commands[] = {
   {"PAUSE_MUSIC_WHEN_GAME_PAUSED"  , 20},
   {"MUTE_AUDIO_ON_FOCUS_LOST"      , 21},
   {"STARTUP"                       , 22},
-  {"unused"                        , 23},
+  {"SKIP_HEART_ZOOM"               , 23},
   {"CURSOR_EDGE_CAMERA_PANNING"    , 24},
   {"DELTA_TIME"                    , 25},
   {"CREATURE_STATUS_SIZE"          , 26},
@@ -732,7 +732,8 @@ static void load_file_configuration(const char *fname, const char *sname, const 
               }
           }
           break;
-        case 23: //unused
+        case 23: //SKIP_HEART_ZOOM
+          CONFLOG("The \"%s\" setting is unused. Use the -skipheartzoom command line option instead.", COMMAND_TEXT(cmd_num));
           break;
         case 24: //CURSOR_EDGE_CAMERA_PANNING
           i = recognize_conf_parameter(buf,&pos,len,logicval_type);
