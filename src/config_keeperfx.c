@@ -733,17 +733,24 @@ static void load_file_configuration(const char *fname, const char *sname, const 
           }
           break;
         case 23: //SKIP_HEART_ZOOM
-          i = recognize_conf_parameter(buf,&pos,len,logicval_type);
-          if (i <= 0)
-          {
+          get_conf_parameter_single(buf, &pos, len, word_buf, sizeof(word_buf));
+          i = get_id(logicval_type, word_buf);
+          if (strcasecmp(word_buf, "LAUNCHED_EXTERNALLY") == 0) {
+            i = 2;
+            if (flag_is_set(start_params.operation_flags, GOF_SingleLevel)) {
+              i = 1;
+            }
+          }
+          if (i <= 0) {
               CONFWRNLOG("Couldn't recognize \"%s\" command parameter in %s file.",
                 COMMAND_TEXT(cmd_num),config_textname);
             break;
           }
-          if (i == 1)
-              features_enabled |= Ft_SkipHeartZoom;
-          else
-              features_enabled &= ~Ft_SkipHeartZoom;
+          if (i == 1) {
+            features_enabled |= Ft_SkipHeartZoom;
+          } else {
+            features_enabled &= ~Ft_SkipHeartZoom;
+          }
           break;
         case 24: //CURSOR_EDGE_CAMERA_PANNING
           i = recognize_conf_parameter(buf,&pos,len,logicval_type);
@@ -1179,7 +1186,6 @@ void process_cmdline_overrides(void)
 {
   if (flag_is_set(start_params.operation_flags, GOF_SingleLevel)) {
     clear_flag(start_params.startup_flags, SFlg_Legal | SFlg_FX | SFlg_Intro);
-    features_enabled |= Ft_SkipHeartZoom;
   }
   // Use CD for music rather than OGG files
   if (start_params.overrides[Clo_CDMusic]) {
