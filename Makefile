@@ -217,6 +217,10 @@ endif
 all: standard
 	@duration=$$(awk "BEGIN { print $$(date +%s.%N) - $(BUILD_START) }"); printf '\033[97mCompile completed in %0.2fs\033[0m\n' $$duration
 standard: $(BIN) $(BIN:%.exe=%.map)
+	@printf 'Build clock:   '; date -Ins; \
+	command -v powershell.exe > /dev/null && { printf 'Windows clock: '; powershell.exe -NoProfile -Command 'Get-Date -Format o'; } || true; \
+	printf 'OBJDIR:        %s (%s)\n' "$(OBJDIR)" "$(origin OBJDIR)"; \
+	find Makefile *.mk libexterns src res deps sdl tools bin "$(OBJDIR)" -type f -newermt now -printf '%TY-%Tm-%TdT%TH:%TM:%TS %p\n' 2> /dev/null | sort -r | head -20 | sed 's/^/Future file: /'
 heavylog: $(HVLOGBIN) $(HVLOGBIN:%.exe=%.map)
 $(OBJDIR)/std/%: COMMONFLAGS += $(std_LOGFLAGS)
 $(OBJDIR)/hvlog/%: COMMONFLAGS += $(hvlog_LOGFLAGS)
