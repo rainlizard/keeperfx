@@ -190,7 +190,7 @@ LDFLAGS = $(LINKLIB) $(DBGFLAGS) $(LINKFLAGS) -Wl,--no-print-map-discarded
 include version.mk
 VER_STRING = $(VER_MAJOR).$(VER_MINOR).$(VER_RELEASE).$(BUILD_NUMBER) $(PACKAGE_SUFFIX)
 ifeq ($(filter -j% --jobserver%,$(MAKEFLAGS)),)
-  MAKEFLAGS += -j
+  MAKEFLAGS += -j$(shell nproc)
 endif
 MAKEFLAGS += -rR
 include prebuilds.mk
