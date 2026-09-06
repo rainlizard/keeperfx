@@ -6059,7 +6059,7 @@ short update_creature_movements(struct Thing *thing)
 
 void check_for_creature_escape_from_lava(struct Thing *thing)
 {
-    if (((thing->alloc_flags & TAlF_IsControlled) == 0) && ((thing->movement_flags & TMvF_IsOnLava) != 0))
+    if (((thing->alloc_flags & TAlF_IsControlled) == 0) && ((thing->movement_flags & TMvF_IsOnLava) != 0) && !creature_is_being_unconscious(thing))
     {
         struct CreatureModelConfig* crconf = creature_stats_get_from_thing(thing);
         if (crconf->hurt_by_lava > 0)

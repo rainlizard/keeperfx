@@ -3224,6 +3224,7 @@ void make_creature_conscious_without_changing_state(struct Thing *creatng)
     cctrl->creature_control_flags &= ~CCFlg_PreventDamage;
     cctrl->creature_control_flags &= ~CCFlg_NoCompControl;
     cctrl->conscious_back_turns = 0;
+    restore_creature_flight_flag(creatng);
     if ((creatng->state_flags & TF1_IsDragged1) != 0)
     {
         struct Thing* sectng = thing_get(cctrl->dragtng_idx);
@@ -4804,7 +4805,6 @@ short state_cleanup_unconscious(struct Thing *creatng)
 {
     TRACE_THING(creatng);
     make_creature_conscious_without_changing_state(creatng);
-    restore_creature_flight_flag(creatng);
     return 1;
 }
 
