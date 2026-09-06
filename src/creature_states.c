@@ -3210,6 +3210,7 @@ void make_creature_unconscious(struct Thing *creatng)
         update_dead_creatures_list_for_owner(creatng);
     }
     creatng->active_state = CrSt_CreatureUnconscious;
+    clear_flag(creatng->movement_flags, TMvF_Flying);
     cctrl->creature_control_flags |= CCFlg_PreventDamage;
     cctrl->creature_control_flags |= CCFlg_NoCompControl;
     cctrl->conscious_back_turns = game.conf.rules[creatng->owner].creature.game_turns_unconscious;
@@ -4803,6 +4804,7 @@ short state_cleanup_unconscious(struct Thing *creatng)
 {
     TRACE_THING(creatng);
     make_creature_conscious_without_changing_state(creatng);
+    restore_creature_flight_flag(creatng);
     return 1;
 }
 
