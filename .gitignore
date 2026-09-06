@@ -22,6 +22,7 @@
 *.cache
 /.vscode/compile_settings.cfg
 /.vscode/game
+/.vscode/launch.json
 /libexterns
 docs/html
 docs/latex
