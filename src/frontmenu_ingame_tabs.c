@@ -2632,6 +2632,8 @@ void draw_whole_status_panel(void)
 {
     long mmzoom;
     struct PlayerInfo* player = get_my_player();
+    if (!player_exists(player))
+        return;
     struct Dungeon* dungeon = get_players_dungeon(player);
     // Get the menu scale
     struct GuiMenu *gmnu;
