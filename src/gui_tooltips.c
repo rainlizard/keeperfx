@@ -181,7 +181,7 @@ TbBool setup_object_tooltips(struct Coord3d *pos)
     {
         update_gui_tooltip_target(thing);
         objst = get_object_model_stats(thing->model);
-        if ((objst->tooltip_stridx >= 0) && (objst->tooltip_stridx != GUIStr_Empty))
+        if ((objst->tooltip_stridx >= 0) && (objst->tooltip_stridx != GUIStr_Empty) && (objst->tooltip_stridx != CpgStr_Empty))
         {
             if ((help_tip_time > 20) || (player->work_state == PSt_CreatrQuery))
             {
@@ -211,7 +211,7 @@ TbBool setup_object_tooltips(struct Coord3d *pos)
                     {
                         i = box_thing_to_special(thing);
                         int32_t strngindex = get_special_description_strindex(i);
-                        if (strngindex != GUIStr_Empty)
+                        if ((strngindex != GUIStr_Empty) && (strngindex != CpgStr_Empty))
                         {
                             set_gui_tooltip_box_fmt(5, "%s", get_string(strngindex));
                         }
@@ -274,7 +274,7 @@ short setup_land_tooltips(struct Coord3d *pos)
   struct SlabMap* slb = get_slabmap_for_subtile(pos->x.stl.num, pos->y.stl.num);
   long skind = slb->kind;
   struct SlabConfigStats* slabst = get_slab_kind_stats(skind);
-  if (slabst->tooltip_stridx == GUIStr_Empty)
+  if ((slabst->tooltip_stridx == GUIStr_Empty) || (slabst->tooltip_stridx == CpgStr_Empty))
     return false;
   update_gui_tooltip_target((void *)(uintptr_t)skind);
   struct PlayerInfo* player = get_my_player();
@@ -309,7 +309,7 @@ short setup_room_tooltips(struct Coord3d *pos)
   if (room_is_invalid(room))
     return false;
   int stridx = roomst->name_stridx;
-  if (stridx == GUIStr_Empty)
+  if ((stridx == GUIStr_Empty) || (stridx == CpgStr_Empty))
     return false;
   update_gui_tooltip_target(room);
   struct PlayerInfo* player = get_my_player();
@@ -351,7 +351,7 @@ short setup_scrolling_tooltips(struct Coord3d *mappos)
 void setup_gui_tooltip(struct GuiButton* gbtn)
 {
     long k;
-    if (gbtn->tooltip_stridx == GUIStr_Empty)
+    if ((gbtn->tooltip_stridx == GUIStr_Empty) || (gbtn->tooltip_stridx == CpgStr_Empty))
         return;
     if (!settings.tooltips_on)
         return;
@@ -602,7 +602,7 @@ long find_and_pad_string_width_to_first_character(char *str, char fch)
 {
     long len = find_string_length_to_first_character(str, fch);
     long fill_len = 10 - len;
-    if (fill_len > 0)
+    if ((fill_len > 0) && (str[len] != '\0'))
     {
         // Moving characters after fch beyond the tooltip box size
         move_characters_forward_and_fill_empty_space(str, 10, fill_len, len, strlen(str) + 9, ' ');
@@ -613,7 +613,7 @@ long find_and_pad_string_width_to_first_character(char *str, char fch)
 
 void draw_tooltip_at(long ttpos_x,long ttpos_y,char *tttext)
 {
-  if (tttext == NULL)
+  if ((tttext == NULL) || (tttext[0] == '\0'))
     return;
   unsigned int flg_mem = RendererGetDrawFlags();
   RendererClearDrawFlags(Lb_TEXT_ONE_COLOR);
