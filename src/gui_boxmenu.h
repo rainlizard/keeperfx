@@ -48,7 +48,7 @@ struct GuiBox *gui_get_next_lowest_priority_box(struct GuiBox *gbox);
 void gui_remove_box_from_list(struct GuiBox *gbox);
 void gui_insert_box_at_list_top(struct GuiBox *gbox);
 struct GuiBox *gui_get_box_point_over(long x, long y);
-struct GuiBoxOption *gui_get_box_option_point_over(struct GuiBox *gbox, long x, long y);
+struct GuiBoxOption *gui_get_box_option_point_over(struct GuiBox *gbox, int32_t x, int32_t y);
 short gui_process_inputs(void);
 TbBool point_is_over_gui_box(ScreenCoord x, ScreenCoord y);
 TbBool cheat_menu_is_active();

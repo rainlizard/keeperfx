@@ -105,6 +105,7 @@ struct GuiBox {
     long pos_y;
     long width;
     long height;
+    int32_t text_scale;
     struct GuiBoxOption *optn_list;
     struct GuiBox *next_box;
     struct GuiBox *prev_box;

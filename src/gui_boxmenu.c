@@ -416,30 +416,26 @@ struct GuiBox *gui_allocate_box_structure(void)
   return NULL;
 }
 
-long gui_calculate_box_width(struct GuiBox *gbox)
+void gui_calculate_box_size(struct GuiBox *gbox)
 {
     int maxw = 0;
+    int count = 0;
     struct GuiBoxOption* goptn = gbox->optn_list;
-    while (goptn->label[0] != '!')
-    {
-        int w = pixel_size * LbTextStringWidth(goptn->label);
-        if (w > maxw)
+    while (goptn->label[0] != '!') {
+        int w = LbTextStringWidth(goptn->label);
+        if (w > maxw) {
             maxw = w;
+        }
+        count++;
         goptn++;
-  }
-  return maxw+16;
-}
-
-long gui_calculate_box_height(struct GuiBox *gbox)
-{
-    int i = 0;
-    struct GuiBoxOption* goptn = gbox->optn_list;
-    while (goptn->label[0] != '!')
-    {
-        i++;
-        goptn++;
-  }
-  return i*(pixel_size*LbTextLineHeight()+2) + 16;
+    }
+    int line_height = LbTextLineHeight() + 2;
+    int scale = max(16, units_per_pixel_ui) * pixel_size;
+    scale = min(scale, MyScreenWidth * 16 / (maxw + 16));
+    scale = min(scale, MyScreenHeight * 16 / (count * line_height + 16));
+    gbox->text_scale = max(1, scale);
+    gbox->width = (maxw + 16) * gbox->text_scale / 16;
+    gbox->height = count * (line_height * gbox->text_scale / 16) + gbox->text_scale;
 }
 
 void gui_remove_box_from_list(struct GuiBox *gbox)
@@ -478,8 +474,7 @@ struct GuiBox *gui_create_box(long x, long y, struct GuiBoxOption *optn_list)
     gbox->optn_list = optn_list;
     gbox->pos_x = x;
     gbox->pos_y = y;
-    gbox->width = gui_calculate_box_width(gbox);
-    gbox->height = gui_calculate_box_height(gbox);
+    gui_calculate_box_size(gbox);
     return gbox;
 }
 
@@ -742,119 +737,79 @@ struct GuiBox *gui_get_box_point_over(long x, long y)
  * Returns box option under given position.
  * Requires text font to be set properly before running.
  */
-struct GuiBoxOption *gui_get_box_option_point_over(struct GuiBox *gbox, long x, long y)
+struct GuiBoxOption *gui_get_box_option_point_over(struct GuiBox *gbox, int32_t x, int32_t y)
 {
-    long sx = gbox->pos_x + 8;
-    long sy = gbox->pos_y + 8;
-    struct GuiBoxOption* gboptn = gbox->optn_list;
-    long lnheight = LbTextLineHeight() * ((long)pixel_size) + 2;
-    while (gboptn->label[0] != '!')
-    {
-        long height = LbTextStringHeight(gboptn->label) * ((long)pixel_size);
-        if ((y >= sy) && (y < sy + height))
-        {
-            long width = LbTextStringWidth(gboptn->label) * ((long)pixel_size);
-            if ((x >= sx) && (x < sx + width))
-            {
-                if ((gboptn->is_enabled == 2) || (gboptn->enabled == 0))
-                    return NULL;
-                return gboptn;
+    int32_t padding = gbox->text_scale / 2;
+    int32_t sx = gbox->pos_x + padding;
+    int32_t sy = gbox->pos_y + padding;
+    int32_t line_height = (LbTextLineHeight() + 2) * gbox->text_scale / 16;
+    if ((x < sx) || (x >= gbox->pos_x + gbox->width - padding)) {
+        return NULL;
+    }
+    struct GuiBoxOption* goptn = gbox->optn_list;
+    while (goptn->label[0] != '!') {
+        if ((y >= sy) && (y < sy + line_height)) {
+            if ((goptn->is_enabled != 1) || !goptn->enabled) {
+                return NULL;
             }
+            return goptn;
         }
-        gboptn++;
-        sy += lnheight;
-  }
-  return NULL;
+        goptn++;
+        sy += line_height;
+    }
+    return NULL;
 }
 
 void gui_draw_box(struct GuiBox *gbox)
 {
     SYNCDBG(6,"Drawing box, first optn \"%s\"",gbox->optn_list->label);
-    struct GuiBoxOption *goptn;
-    LbTextSetWindow(0, 0, MyScreenWidth/pixel_size, MyScreenHeight/pixel_size);
-    long mouse_x = GetMouseX();
-    long mouse_y = GetMouseY();
+    LbTextSetFont(font_sprites);
+    LbTextSetWindow(0, 0, MyScreenWidth / pixel_size, MyScreenHeight / pixel_size);
+    unsigned short draw_flags = RendererGetDrawFlags();
+    RendererSetDrawFlags(Lb_TEXT_ONE_COLOR);
+    int32_t mouse_x = GetMouseX();
+    int32_t mouse_y = GetMouseY();
     struct GuiBoxOption* goptn_over = NULL;
     struct GuiBox* gbox_over = gui_get_box_point_over(mouse_x, mouse_y);
-    if (gbox_over != NULL)
-    {
-      goptn_over = gui_get_box_option_point_over(gbox_over, mouse_x, mouse_y);
+    if (gbox_over != NULL) {
+        goptn_over = gui_get_box_option_point_over(gbox_over, mouse_x, mouse_y);
     }
-
-    LbTextSetFont(font_sprites);
-    long lnheight = pixel_size * LbTextLineHeight() + 2;
-    long pos_y = gbox->pos_y + 8;
-    long pos_x = gbox->pos_x + 8;
-    if (gbox != gui_get_highest_priority_box())
-    {
-        RendererAddDrawFlags(Lb_SPRITE_TRANSPAR4);
-        LbDrawBox(gbox->pos_x/pixel_size, gbox->pos_y/pixel_size, gbox->width/pixel_size, gbox->height/pixel_size, colours[6][0][0]);
-        if (RendererGetDrawFlags() & Lb_SPRITE_OUTLINE)
-        {
-          LbDrawBox(gbox->pos_x/pixel_size, gbox->pos_y/pixel_size, gbox->width/pixel_size, gbox->height/pixel_size, colours[0][0][0]);
-        } else
-        {
-          RendererToggleDrawFlags(Lb_SPRITE_OUTLINE);
-          LbDrawBox(gbox->pos_x/pixel_size, gbox->pos_y/pixel_size, gbox->width/pixel_size, gbox->height/pixel_size, colours[0][0][0]);
-          RendererToggleDrawFlags(Lb_SPRITE_OUTLINE);
-        }
-        RendererToggleDrawFlags(Lb_SPRITE_TRANSPAR4);
-        RendererSetDrawColour(colours[3][3][3]);
-        goptn = gbox->optn_list;
-        while (goptn->label[0] != '!')
-        {
-          if (goptn->active_cb != NULL)
+    int32_t padding = gbox->text_scale / 2;
+    int32_t line_height = (LbTextLineHeight() + 2) * gbox->text_scale / 16;
+    int32_t pos_y = gbox->pos_y + padding;
+    int32_t pos_x = gbox->pos_x + padding;
+    TbPixel border_colour = colours[7][7][7];
+    if (gbox == gui_get_highest_priority_box()) {
+        border_colour = colours[15][12][4];
+    }
+    LbDrawBox(gbox->pos_x / pixel_size, gbox->pos_y / pixel_size, gbox->width / pixel_size, gbox->height / pixel_size, colours[0][0][0]);
+    RendererAddDrawFlags(Lb_SPRITE_OUTLINE);
+    LbDrawBox(gbox->pos_x / pixel_size, gbox->pos_y / pixel_size, gbox->width / pixel_size, gbox->height / pixel_size, border_colour);
+    RendererClearDrawFlags(Lb_SPRITE_OUTLINE);
+    struct GuiBoxOption* goptn = gbox->optn_list;
+    while (goptn->label[0] != '!') {
+        if (goptn->active_cb != NULL) {
             goptn->enabled = (goptn->active_cb)(gbox, goptn, &goptn->acb_param1);
-          else
+        } else {
             goptn->enabled = 1;
-          if (!goptn->enabled)
-            RendererSetDrawColour(colours[0][0][0]);
-          else
-            RendererSetDrawColour(colours[3][3][3]);
-          if (RendererCanDraw())
-          {
-            LbTextDraw(pos_x/pixel_size, pos_y/pixel_size, goptn->label);
-          }
-          goptn++;
-          pos_y += lnheight;
         }
-    } else
-    {
-        RendererAddDrawFlags(Lb_SPRITE_TRANSPAR4);
-        LbDrawBox(gbox->pos_x/pixel_size, gbox->pos_y/pixel_size, gbox->width/pixel_size, gbox->height/pixel_size, colours[12][0][0]);
-        if (RendererGetDrawFlags() & Lb_SPRITE_OUTLINE)
-        {
-            LbDrawBox(gbox->pos_x/pixel_size, gbox->pos_y/pixel_size, gbox->width/pixel_size, gbox->height/pixel_size, colours[2][0][0]);
-        } else
-        {
-            RendererToggleDrawFlags(Lb_SPRITE_OUTLINE);
-            LbDrawBox(gbox->pos_x/pixel_size, gbox->pos_y/pixel_size, gbox->width/pixel_size, gbox->height/pixel_size, colours[2][0][0]);
-            RendererToggleDrawFlags(Lb_SPRITE_OUTLINE);
+        if ((gbox == gbox_over) && (goptn == goptn_over) && (gbox != dragging_box.gbox)) {
+            LbDrawBox(pos_x / pixel_size, pos_y / pixel_size, (gbox->width - 2 * padding) / pixel_size, line_height / pixel_size, colours[3][3][3]);
         }
-        RendererToggleDrawFlags(Lb_SPRITE_TRANSPAR4);
-        goptn = gbox->optn_list;
-        while (goptn->label[0] != '!')
-        {
-            if (goptn->active_cb != NULL)
-              goptn->enabled = (goptn->active_cb)(gbox, goptn, &goptn->acb_param1);
-            else
-              goptn->enabled = 1;
-            if (!goptn->enabled)
-              RendererSetDrawColour(colours[0][0][0]);
-            else
-            if ( ((gbox == gbox_over) && (goptn == goptn_over) && (gbox != dragging_box.gbox)) ||
-                 ((gbox != NULL) && (goptn->active != 0)) )
-              RendererSetDrawColour(colours[15][15][15]);
-            else
-              RendererSetDrawColour(colours[9][9][9]);
-            if (RendererCanDraw())
-            {
-              LbTextDraw(pos_x/pixel_size, pos_y/pixel_size, goptn->label);
-            }
-            goptn++;
-            pos_y += lnheight;
+        if (!goptn->enabled) {
+            RendererSetDrawColour(colours[7][7][7]);
+        } else if (goptn->active) {
+            RendererSetDrawColour(colours[15][12][4]);
+        } else {
+            RendererSetDrawColour(colours[15][15][15]);
         }
+        if (RendererCanDraw()) {
+            LbTextDrawResized(pos_x / pixel_size, pos_y / pixel_size, gbox->text_scale / pixel_size, goptn->label);
+        }
+        goptn++;
+        pos_y += line_height;
     }
+    RendererSetDrawFlags(draw_flags);
 }
 
 TbBool gui_process_option_inputs(struct GuiBox *gbox, struct GuiBoxOption *goptn)
