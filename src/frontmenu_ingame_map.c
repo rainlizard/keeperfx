@@ -98,7 +98,7 @@ static int32_t *MapShapeEnd = NULL;
  * panel_map_draw_slabs() via UIRenderer_AcquireMinimapBuffer() and cleared by
  * panel_map_submit_to_renderer() once the data is handed off.
  */
-static unsigned char *s_minimap_pixels = NULL;
+static uint16_t *s_minimap_pixels = NULL;
 
 static long PanelMapY;
 static long PanelMapX;
@@ -750,19 +750,11 @@ void setup_panel_colors(void)
 {
     const int frame = (get_gameturn() % (4 * gui_blink_rate)) / gui_blink_rate;
     const TbPixel frcol = player_room_colours[(get_gameturn() % (4 * neutral_flash_rate)) / neutral_flash_rate];
-    // Index 0 is the transparent sentinel
-    TbPixel rock_col = 0;
-    if (RendererCompositesMinimapBackground())
-    {
-        unsigned char black_idx = colours[0][0][0];
-        rock_col = (black_idx != 0) ? black_idx : 1;
-    }
     set_blinking_kind_colours(frame);
-    for (int bg = 0; bg < 256; bg++)
-    {
+    for (int bg = 0; bg < 256; bg++) {
         MapKindColours[0][bg] = bg;
         MapKindColours[PnC_Wall][bg]       = ghost_table_blend(bg, 16*256, 0, 0);
-        MapKindColours[PnC_Rock][bg]       = rock_col;
+        MapKindColours[PnC_Rock][bg]       = 0;
         MapKindColours[PnC_Gold][bg]       = ghost_table_blend(bg, 140*256, 0, 0);
         MapKindColours[PnC_Lava][bg]       = 146;
         MapKindColours[PnC_Water][bg]      = 85;
@@ -884,7 +876,7 @@ void panel_map_draw_slabs(long x, long y, long units_per_px, long zoom)
     // auto_gen_tables sets MapDiagonalLength; acquire the buffer afterwards so
     // it gets the correct (non-zero) size on the very first frame.
     auto_gen_tables(units_per_px);
-    s_minimap_pixels = UIRenderer_AcquireMinimapBuffer(PanelMapX, PanelMapY, MapDiagonalLength);
+    s_minimap_pixels = UIRenderer_AcquireMinimapBuffer(MapDiagonalLength);
     update_panel_colors();
     struct PlayerInfo *player = get_my_player();
     struct Camera *cam = get_local_active_camera(player);
@@ -897,10 +889,9 @@ void panel_map_draw_slabs(long x, long y, long units_per_px, long zoom)
     int32_t shift_stl_x = (cam->mappos.x.val << 8) - MapDiagonalLength * shift_x / 2 - MapDiagonalLength * shift_y / 2;
     int32_t shift_stl_y = (cam->mappos.y.val << 8) - MapDiagonalLength * shift_y / 2 + MapDiagonalLength * shift_x / 2;
 
-    // The buffer from UIRenderer_AcquireMinimapBuffer() already holds what each pixel is
-    // drawn over, in its own size*size coordinate space (no PanelMapX/Y offset -- the
-    // renderer positions it at (PanelMapX, PanelMapY) on submit).
-    TbPixel *out_line;
+    // The buffer uses its own size*size coordinate space; the renderer applies
+    // background colour tables at (PanelMapX, PanelMapY) on submit.
+    uint16_t *out_line;
     out_line = s_minimap_pixels;
     int h;
     for (h = 0; h < MapDiagonalLength; h++)
@@ -931,7 +922,7 @@ void panel_map_draw_slabs(long x, long y, long units_per_px, long zoom)
             subpos_y += shift_y;
             subpos_x -= shift_x;
         }
-        TbPixel *out;
+        uint16_t *out;
         out = &out_line[start_w];
         unsigned int precor_y;
         unsigned int precor_x;
@@ -943,7 +934,11 @@ void panel_map_draw_slabs(long x, long y, long units_per_px, long zoom)
             int pnmap_idx;
             pnmap_idx = ((precor_x>>16)) + (((precor_y>>16)) * (game.map_subtiles_x + 1) );
             unsigned short kind = PanelMap[pnmap_idx];
-            *out = (kind <= PnC_Abyss) ? MapKindColours[kind][*out] : PanelColours[kind];
+            if (kind <= PnC_Abyss) {
+                *out = MinimapPixelKind + kind;
+            } else {
+                *out = PanelColours[kind];
+            }
             precor_x += shift_y;
             precor_y -= shift_x;
             out++;
@@ -961,7 +956,7 @@ void panel_map_draw_slabs(long x, long y, long units_per_px, long zoom)
  */
 void panel_map_submit_to_renderer(void)
 {
-    UIRenderer_SubmitMinimap(PanelMapX, PanelMapY, MapDiagonalLength, MapShapeStart, MapShapeEnd);
+    UIRenderer_SubmitMinimap(PanelMapX, PanelMapY, MapDiagonalLength, &MapKindColours[0][0], PnC_Abyss + 1);
     s_minimap_pixels = NULL;
 }
 /******************************************************************************/

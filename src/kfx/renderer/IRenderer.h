@@ -33,14 +33,6 @@ public:
     // Present the drawn frame to the window (blit + flip). Default no-op.
     virtual void PresentFrame() {}
 
-    struct BackendCapabilities {
-        // True when the backend composites the minimap over the panel artwork
-        // itself (draw-order layering): its minimap buffer starts zeroed and
-        // index 0 is transparent, so real black must use another index.
-        int compositesMinimapBackground = 0;
-    };
-    virtual BackendCapabilities GetCapabilities() const { return BackendCapabilities{}; }
-
     virtual bool BeginFrame() = 0;
     virtual void EndFrame() = 0;
 

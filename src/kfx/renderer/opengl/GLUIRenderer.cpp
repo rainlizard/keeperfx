@@ -100,9 +100,15 @@ bool GLUIRenderer::Init()
     solid_desc.debug_name = "ui_solid";
     m_shader_solid_handle = m_resource_mapper->RequestCreateProgram(solid_desc);
 
+    GpuProgramDesc minimap_desc;
+    minimap_desc.vertex_src = UI_VERTEX_SHADER;
+    minimap_desc.fragment_src = UI_MINIMAP_FRAGMENT_SHADER;
+    minimap_desc.debug_name = "ui_minimap";
+    m_shader_minimap_handle = m_resource_mapper->RequestCreateProgram(minimap_desc);
+
     if (!ResolveShaderId(m_shader_sprite_handle) || !ResolveShaderId(m_shader_sprite_colored_handle)
         || !ResolveShaderId(m_shader_remap_handle) || !ResolveShaderId(m_shader_clut_handle)
-        || !ResolveShaderId(m_shader_solid_handle))
+        || !ResolveShaderId(m_shader_solid_handle) || !ResolveShaderId(m_shader_minimap_handle))
         return false;
 
     if (m_clut_tex_handle == kInvalidGpuResource)
@@ -482,27 +488,21 @@ void GLUIRenderer::FlushPendingSlabUpload()
     m_slab_dim = dim;
 }
 
-uint8_t* GLUIRenderer::AcquireMinimapBuffer(int /*screen_x*/, int /*screen_y*/, int size)
+uint16_t* GLUIRenderer::AcquireMinimapBuffer(int size)
 {
     if (size <= 0) return nullptr;
     auto& buf = m_minimap_cpu_buf[m_minimap_write_idx];
     const size_t needed = (size_t)size * (size_t)size;
-    if (buf.size() != needed)
-        buf.assign(needed, 0);
-    else
-        std::fill(buf.begin(), buf.end(), (uint8_t)0);
+    buf.assign(needed, MinimapPixelTransparent);
     m_minimap_cpu_size = size;
     return buf.data();
 }
 
 void GLUIRenderer::SubmitMinimap(int screen_x, int screen_y, int size,
-                                 const int32_t* /*shape_start*/, const int32_t* /*shape_end*/)
+                                 const uint8_t* colours, int colour_count)
 {
-    // shape_start/shape_end are unused here: any buffer cell panel_map_draw_pixel()
-    // never wrote stays index 0 and is discarded by the sprite shader like any
-    // other transparent texel, letting the panel-background quad already drawn
-    // underneath show through -- see BackendCapabilities::compositesMinimapBackground.
-    if (size <= 0 || m_minimap_cpu_size != size || !m_ui_write_cmds) return;
+    if (size <= 0 || m_minimap_cpu_size != size || !m_ui_write_cmds || colours == nullptr || colour_count <= 0) return;
+    m_minimap_colours[m_minimap_write_idx].assign(colours, colours + colour_count * 256);
     IRUIMinimapCmd cmd;
     cmd.layer = ComputeCurrentLayer();
     cmd.x = screen_x;
@@ -521,32 +521,60 @@ bool GLUIRenderer::UploadMinimap(int slot, int size)
 {
     if (slot < 0 || slot > 1 || size <= 0 || !m_resource_mapper) return false;
     const auto& buf = m_minimap_cpu_buf[slot];
+    const auto& colours = m_minimap_colours[slot];
     if (buf.size() != (size_t)size * (size_t)size) return false;
+    const int colour_count = colours.size() / 256;
+    if (colour_count <= 0) return false;
 
-    if (m_minimap_tex_handle == kInvalidGpuResource)
-    {
+    struct MinimapTexture {
+        GpuResourceHandle* handle;
+        GpuTextureFormat format;
+        int width;
+        int height;
+        GLint internal_format;
+        GLenum upload_format;
+        GLenum upload_type;
+        const char* name;
+    };
+    const MinimapTexture textures[] = {
+        { &m_minimap_tex_handle, GpuTextureFormat::R16UI, size, size, GL_R16UI, GL_RED_INTEGER, GL_UNSIGNED_SHORT, "minimap" },
+        { &m_minimap_colours_tex_handle, GpuTextureFormat::R8, 256, colour_count, GL_R8, GL_RED, GL_UNSIGNED_BYTE, "minimap_colours" },
+        { &m_minimap_background_tex_handle, GpuTextureFormat::RGBA8, size, size, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, "minimap_background" },
+    };
+    for (const auto& texture : textures) {
+        if (*texture.handle != kInvalidGpuResource && size == m_minimap_tex_size && colour_count == m_minimap_colour_count) {
+            continue;
+        }
         GpuTextureDesc desc;
-        desc.width = size;
-        desc.height = size;
-        desc.format = GpuTextureFormat::R8;
+        desc.width = texture.width;
+        desc.height = texture.height;
+        desc.format = texture.format;
         desc.min_filter = GpuTextureFilter::Nearest;
         desc.mag_filter = GpuTextureFilter::Nearest;
         desc.wrap = GpuTextureWrap::Clamp;
-        desc.debug_name = "minimap";
-        m_minimap_tex_handle = m_resource_mapper->RequestCreateTexture(desc);
-        m_minimap_tex_size = 0;
+        desc.debug_name = texture.name;
+        if (*texture.handle == kInvalidGpuResource) {
+            *texture.handle = m_resource_mapper->RequestCreateTexture(desc);
+        }
+        const GLTexture* tex = m_resource_mapper->ResolveTexture(*texture.handle);
+        if (tex == nullptr) {
+            return false;
+        }
+        glBindTexture(GL_TEXTURE_2D, tex->id);
+        glTexImage2D(GL_TEXTURE_2D, 0, texture.internal_format, texture.width, texture.height,
+                     0, texture.upload_format, texture.upload_type, nullptr);
     }
+    m_minimap_tex_size = size;
+    m_minimap_colour_count = colour_count;
     const GLTexture* tex = m_resource_mapper->ResolveTexture(m_minimap_tex_handle);
-    if (tex == nullptr) return false;
+    const GLTexture* colours_tex = m_resource_mapper->ResolveTexture(m_minimap_colours_tex_handle);
+    if (tex == nullptr || colours_tex == nullptr) return false;
 
     glBindTexture(GL_TEXTURE_2D, tex->id);
-    if (size != m_minimap_tex_size)
-    {
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, size, size, 0, GL_RED, GL_UNSIGNED_BYTE, nullptr);
-        m_minimap_tex_size = size;
-    }
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, size, size, GL_RED, GL_UNSIGNED_BYTE, buf.data());
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, size, size, GL_RED_INTEGER, GL_UNSIGNED_SHORT, buf.data());
+    glBindTexture(GL_TEXTURE_2D, colours_tex->id);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, colour_count, GL_RED, GL_UNSIGNED_BYTE, colours.data());
     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
     glBindTexture(GL_TEXTURE_2D, 0);
     return true;
@@ -742,12 +770,12 @@ void GLUIRenderer::AppendQuadsFromIR(const UICommandBuffers& ui, std::vector<UIQ
         }
         case K_Minimap: {
             const IRUIMinimapCmd& c = ui.minimaps.Data()[ref.idx];
-            if (!UploadMinimap(c.slot, c.size)) break;
             UIQuad q;
             q.x0 = (float)c.x; q.y0 = (float)c.y;
             q.x1 = q.x0 + (float)c.size; q.y1 = q.y0 + (float)c.size;
             q.u0 = 0.0f; q.v0 = 0.0f; q.u1 = 1.0f; q.v1 = 1.0f;
             q.ndc_z = c.ndc_z; q.mode = (float)PASS_MINIMAP; q.seq = c.seq;
+            q.remap_row = c.slot;
             out[(int)c.layer].push_back(q);
             break;
         }
@@ -814,11 +842,38 @@ void GLUIRenderer::FlushQuadRun(const std::vector<UIQuad>& run, PassType pass, i
         shader = ResolveShaderId(m_shader_sprite_handle); tex0 = slab_tex->id; bind_palette = true;
         break;
     }
-    case PASS_MINIMAP:
-    {
+    case PASS_MINIMAP: {
+        const UIQuad& q = run.front();
+        const int size = (int)(q.x1 - q.x0);
+        if (!UploadMinimap(remap_row, size)) return;
         const GLTexture* mm_tex = m_resource_mapper->ResolveTexture(m_minimap_tex_handle);
-        if (!mm_tex) return;
-        shader = ResolveShaderId(m_shader_sprite_handle); tex0 = mm_tex->id; bind_palette = true;
+        const GLTexture* background_tex = m_resource_mapper->ResolveTexture(m_minimap_background_tex_handle);
+        const GLTexture* colours_tex = m_resource_mapper->ResolveTexture(m_minimap_colours_tex_handle);
+        const GLTexture* index_tex = m_resource_mapper->ResolveTexture(m_palette_index_tex_handle);
+        if (!mm_tex || !background_tex || !colours_tex || !index_tex) return;
+        shader = ResolveShaderId(m_shader_minimap_handle);
+        tex0 = mm_tex->id;
+        bind_palette = true;
+
+        const int x0 = std::max(0, (int)q.x0);
+        const int y0 = std::max(0, (int)q.y0);
+        const int x1 = std::min(m_screen_w, (int)q.x1);
+        const int y1 = std::min(m_screen_h, (int)q.y1);
+        if (x1 <= x0 || y1 <= y0) return;
+        GLint read_fbo;
+        GLint draw_fbo;
+        glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &read_fbo);
+        glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &draw_fbo);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, draw_fbo);
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, background_tex->id);
+        glCopyTexSubImage2D(GL_TEXTURE_2D, 0, x0 - (int)q.x0, (int)q.y1 - y1,
+                          x0, m_screen_h - y1, x1 - x0, y1 - y0);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, read_fbo);
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_2D, colours_tex->id);
+        glActiveTexture(GL_TEXTURE4);
+        glBindTexture(GL_TEXTURE_2D, index_tex->id);
         break;
     }
     }
@@ -842,6 +897,13 @@ void GLUIRenderer::FlushQuadRun(const std::vector<UIQuad>& run, PassType pass, i
     }
 
     glUseProgram(shader);
+    if (pass == PASS_MINIMAP) {
+        glUniform1i(glGetUniformLocation(shader, "u_background"), 2);
+        glUniform1i(glGetUniformLocation(shader, "u_minimap_colours"), 3);
+        glUniform1i(glGetUniformLocation(shader, "u_index_lookup"), 4);
+        glUniform1ui(glGetUniformLocation(shader, "u_kind_offset"), MinimapPixelKind);
+        glUniform1ui(glGetUniformLocation(shader, "u_transparent"), MinimapPixelTransparent);
+    }
     glUniform2f(glGetUniformLocation(shader, "u_screen_size"), (float)m_screen_w, (float)m_screen_h);
     if (tex0)
     {
@@ -900,7 +962,7 @@ void GLUIRenderer::FlushQuadLayer(std::vector<UIQuad>& quads, bool depth_test)
     for (const UIQuad& q : quads)
     {
         PassType p = classify(q.mode);
-        bool remap_changed = ((p == PASS_REMAP || p == PASS_CLUT) && q.remap_row != run_remap_row);
+        bool remap_changed = ((p == PASS_REMAP || p == PASS_CLUT || p == PASS_MINIMAP) && q.remap_row != run_remap_row);
         if (!run.empty() && (p != run_pass || remap_changed))
         {
             FlushQuadRun(run, run_pass, run_remap_row);
@@ -988,7 +1050,7 @@ void GLUIRenderer::DrawGameUIQuadsInterleaved(std::vector<UIQuad>& quads,
         {
             const UIQuad& q = quads[qi++];
             PassType p = classify(q.mode);
-            bool remap_changed = ((p == PASS_REMAP || p == PASS_CLUT) && q.remap_row != run_remap_row);
+            bool remap_changed = ((p == PASS_REMAP || p == PASS_CLUT || p == PASS_MINIMAP) && q.remap_row != run_remap_row);
             if (!run.empty() && (p != run_pass || remap_changed))
                 flush_run();
             if (run.empty()) { run_pass = p; run_remap_row = q.remap_row; }

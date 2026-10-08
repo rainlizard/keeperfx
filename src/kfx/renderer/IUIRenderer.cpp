@@ -14,7 +14,7 @@
 #include "bflib_sprite.h"   // TbSprite, num_sprites, get_sprite
 #include "bflib_video.h"    // Lb_SPRITE_* draw flags
 #include "gui_draw.h"       // draw_slab64k_background_immediate
-#include <algorithm>        // std::fill, std::copy (AcquireMinimapBuffer)
+#include <algorithm>        // std::min, std::max (SubmitMinimap)
 #include <functional>       // std::less (ForgetSprites)
 #include "post_inc.h"
 
@@ -236,55 +236,38 @@ void IUIRenderer::SubmitSlabBackground(int32_t x, int32_t y, int32_t w, int32_t 
     draw_slab64k_background_immediate(x, y, w, h);
 }
 
-uint8_t* IUIRenderer::AcquireMinimapBuffer(int screen_x, int screen_y, int size)
+uint16_t* IUIRenderer::AcquireMinimapBuffer(int size)
 {
     if (size <= 0) return nullptr;
     const size_t needed = (size_t)size * (size_t)size;
-    if (m_minimap_cpu_size != size)
-    {
-        m_minimap_cpu_buf.assign(needed, 0);
-        m_minimap_cpu_size = size;
-    }
-    if (lbDisplay.WScreen == NULL)
-    {
-        std::fill(m_minimap_cpu_buf.begin(), m_minimap_cpu_buf.end(), (uint8_t)0);
-        return m_minimap_cpu_buf.data();
-    }
-    // Start from what is already on screen, so pixels the minimap doesn't draw
-    // keep the panel art when SubmitMinimap() copies the buffer back.
-    const int32_t stride = RendererScreenWidth();
-    const TbPixel* in_line = &lbDisplay.WScreen[screen_x + stride * screen_y];
-    uint8_t* dst_line = m_minimap_cpu_buf.data();
-    for (int h = 0; h < size; h++)
-    {
-        std::copy(in_line, in_line + size, dst_line);
-        in_line += stride;
-        dst_line += size;
-    }
+    m_minimap_cpu_buf.assign(needed, MinimapPixelTransparent);
+    m_minimap_cpu_size = size;
     return m_minimap_cpu_buf.data();
 }
 
 void IUIRenderer::SubmitMinimap(int screen_x, int screen_y, int size,
-                                const int32_t* shape_start, const int32_t* shape_end)
+                                const uint8_t* colours, int colour_count)
 {
-    // CPU default: blit the acquired buffer straight into the framebuffer,
-    // masked to the circular shape so panel art outside the minimap circle
-    // survives (mirrors what the old direct-WScreen-write code did).
-    if (size <= 0 || (int)m_minimap_cpu_buf.size() < size * size || lbDisplay.WScreen == NULL)
+    // CPU default: resolve each pixel against the framebuffer, leaving
+    // transparent pixels untouched so panel art outside the circle survives.
+    if (size <= 0 || m_minimap_cpu_size != size || lbDisplay.WScreen == NULL || colours == nullptr || colour_count <= 0)
         return;
-    const long stride = RendererScreenWidth();
-    TbPixel* out_line = &lbDisplay.WScreen[screen_x + stride * screen_y];
-    const uint8_t* src_line = m_minimap_cpu_buf.data();
-    for (int h = 0; h < size; h++)
-    {
-        int w0 = shape_start ? shape_start[h] : 0;
-        int w1 = shape_end   ? shape_end[h]   : size;
-        if (w0 < 0) w0 = 0;
-        if (w1 > size) w1 = size;
-        for (int w = w0; w < w1; w++)
-            out_line[w] = (TbPixel)src_line[w];
-        out_line += stride;
-        src_line += size;
+    const int32_t stride = RendererScreenWidth();
+    const int x0 = std::max(0, -screen_x);
+    const int y0 = std::max(0, -screen_y);
+    const int x1 = std::min(size, stride - screen_x);
+    const int y1 = std::min(size, (int32_t)RendererScreenHeight() - screen_y);
+    if (x1 <= x0 || y1 <= y0) return;
+    for (int y = y0; y < y1; y++) {
+        TbPixel* out = &lbDisplay.WScreen[(screen_y + y) * stride + screen_x + x0];
+        const uint16_t* src = &m_minimap_cpu_buf[y * size + x0];
+        for (int x = x0; x < x1; x++, src++, out++) {
+            if (*src < MinimapPixelKind) {
+                *out = *src;
+            } else if (*src != MinimapPixelTransparent && *src - MinimapPixelKind < colour_count) {
+                *out = colours[(*src - MinimapPixelKind) * 256 + *out];
+            }
+        }
     }
 }
 

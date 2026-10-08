@@ -390,6 +390,7 @@ void RendererOpenGL::render_thread_init()
     m_impl->ui.SetAtlas(&m_impl->atlas);
     m_impl->ui.SetPaletteTexture(m_impl->palette_tex_handle);
     m_impl->ui.SetFadeTableTexture(m_impl->fade_table_tex_handle);
+    m_impl->ui.SetPaletteIndexTexture(m_impl->palette_index_lookup.GetTexture());
     m_impl->ui.SetScreenSize((int)RendererPhysicalWidth(), (int)lbDisplay.PhysicalScreenHeight);
     m_impl->text.SetUIRenderer(&m_impl->ui);
     m_impl->cursor.SetUIRenderer(&m_impl->ui);

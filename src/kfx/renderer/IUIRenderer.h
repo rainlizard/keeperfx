@@ -18,6 +18,7 @@
 
 #include "kfx/renderer/DrawState.h"
 #include "kfx/renderer/SpriteHandle.h"
+#include "kfx/renderer/Minimap.h"
 #include "kfx/renderer/ir/UICommands.h" // IRUILayer
 #include "bflib_basics.h"
 #include <cstdint>
@@ -71,26 +72,20 @@ public:
 
     virtual void UpdateSlabTexture(const unsigned char* /*data*/, int /*dim*/) {}
 
-    /** Acquire a renderer-owned size*size palette-index scratch buffer for the
-     *  minimap at (screen_x, screen_y), always non-null for a valid size. The
-     *  CPU default fills it with the framebuffer pixels already there; a backend
-     *  that composites the background zero-fills it (index 0 = "nothing drawn
-     *  here"). The caller (the minimap draw functions) writes into it
+    /** Acquire a renderer-owned size*size minimap buffer, initially filled
+     *  with MinimapPixelTransparent. Pixels contain palette indices or
+     *  MinimapPixelKind plus a colour-table row. The caller writes into it
      *  directly and calls SubmitMinimap() once done -- this is bulk raster
      *  data, not a per-command IR submission, same shape as UpdateSlabTexture()
      *  above. */
-    virtual uint8_t* AcquireMinimapBuffer(int screen_x, int screen_y, int size);
+    virtual uint16_t* AcquireMinimapBuffer(int size);
 
     /** Display the buffer filled via AcquireMinimapBuffer() at (screen_x,
-     *  screen_y). shape_start/shape_end are the per-row circular-mask bounds
-     *  (size entries each, screen_x-relative) -- a backend that composites the
-     *  minimap over the panel art itself (see IRenderer::BackendCapabilities::
-     *  compositesMinimapBackground) doesn't need them, since anything the
-     *  caller never wrote stays index 0 and is discarded like any other
-     *  transparent sprite texel; the CPU default uses them to mask its blit so
-     *  panel art outside the circle survives. */
+     *  screen_y), resolving colour-table rows against the background pixel
+     *  already there. Each of the colour_count rows contains 256 entries.
+     *  MinimapPixelTransparent leaves the background untouched. */
     virtual void SubmitMinimap(int screen_x, int screen_y, int size,
-                               const int32_t* shape_start, const int32_t* shape_end);
+                               const uint8_t* colours, int colour_count);
 
     virtual void SetWorldOverlay(float ndc_z) { m_world_overlay_active = true; m_world_overlay_z = ndc_z; }
     virtual void ClearWorldOverlay() { m_world_overlay_active = false; }
@@ -152,7 +147,7 @@ protected:
     bool    m_game_vp_set = false;
 
     /** Backing store for the CPU default AcquireMinimapBuffer(). */
-    std::vector<uint8_t> m_minimap_cpu_buf;
+    std::vector<uint16_t> m_minimap_cpu_buf;
     int                  m_minimap_cpu_size = 0;
 
     IRUILayer ComputeCurrentLayer() const

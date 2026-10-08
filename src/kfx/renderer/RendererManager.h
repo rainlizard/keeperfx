@@ -144,12 +144,6 @@ TbBool RendererSubmitLandviewZoom(const unsigned char *src_buf, int src_w, int s
 // Save the current frame to a file via the active backend (fmt: 1=PNG, 2=BMP).
 TbBool RendererScheduleScreenshot(const char* path, int fmt);
 
-/** True when the active backend composites the minimap over the panel
- *  artwork itself (draw-order layering) -- index 0 in its minimap buffer is
- *  transparent, so callers must draw black with another index.
- *  See IRenderer::BackendCapabilities::compositesMinimapBackground. */
-TbBool RendererCompositesMinimapBackground(void);
-
 /** True when draws made now reach the current frame: the software framebuffer
  *  is locked, or the backend records draws to render later. */
 TbBool RendererCanDraw(void);

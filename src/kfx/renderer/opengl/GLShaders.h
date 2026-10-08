@@ -908,6 +908,32 @@ vec3 palette_colour(int idx)
 }
 )glsl"
 
+constexpr const char* UI_MINIMAP_FRAGMENT_SHADER = R"glsl(
+#version 330 core
+)glsl" PALETTE_INDEX_COMMON R"glsl(
+in vec2 v_uv;
+uniform usampler2D u_sprite_atlas;
+uniform sampler2D u_background;
+uniform sampler2D u_minimap_colours;
+uniform uint u_kind_offset;
+uniform uint u_transparent;
+out vec4 fragColor;
+void main()
+{
+    uint pixel = texture(u_sprite_atlas, v_uv).r;
+    if (pixel == u_transparent) discard;
+    int idx = int(pixel);
+    if (pixel >= u_kind_offset) {
+        int row = int(pixel - u_kind_offset);
+        if (row >= textureSize(u_minimap_colours, 0).y) discard;
+        vec3 background = texture(u_background, vec2(v_uv.x, 1.0 - v_uv.y)).rgb;
+        int bg = palette_index(background);
+        idx = int(texelFetch(u_minimap_colours, ivec2(bg, row), 0).r * 255.0 + 0.5);
+    }
+    fragColor = vec4(palette_colour(idx), 1.0);
+}
+)glsl";
+
 // Mist lens, following CMistFade::Render(): virtual 640x480 coordinates in
 // 16.16 fixed point, two wrapped layers of the 256x256 density texture,
 // n = (primary+secondary)>>3 clamped to 32, then each pixel's index goes

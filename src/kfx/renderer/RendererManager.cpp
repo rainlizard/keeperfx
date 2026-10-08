@@ -198,11 +198,6 @@ TbBool RendererSubmitLandviewZoom(const unsigned char *src_buf, int src_w, int s
                                                  screen_cx, screen_cy, scale) ? 1 : 0;
 }
 
-TbBool RendererCompositesMinimapBackground(void)
-{
-    return (s_active_renderer != nullptr) ? (TbBool)s_active_renderer->GetCapabilities().compositesMinimapBackground : 0;
-}
-
 TbBool RendererCanDraw(void)
 {
     return (s_active_renderer != nullptr && s_active_renderer->CanDraw()) ? 1 : 0;

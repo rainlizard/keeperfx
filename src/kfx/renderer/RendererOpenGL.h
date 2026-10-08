@@ -20,7 +20,6 @@ public:
     void ClearScreen(unsigned char colour) override;
     void PresentFrame() override;
 
-    BackendCapabilities GetCapabilities() const override { return BackendCapabilities{ 1 }; }
     bool CanDraw() const override
     {
         return true;

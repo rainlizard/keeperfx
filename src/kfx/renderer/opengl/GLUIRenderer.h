@@ -32,6 +32,10 @@ public:
     void SetResourceMapper(GLResourceMapper* mapper) { m_resource_mapper = mapper; }
     void SetPaletteTexture(GpuResourceHandle tex) { m_palette_tex_handle = tex; }
     void SetFadeTableTexture(GpuResourceHandle tex) { m_fade_table_tex_handle = tex; }
+    void SetPaletteIndexTexture(GpuResourceHandle tex)
+    {
+        m_palette_index_tex_handle = tex;
+    }
     void SetScreenSize(int w, int h) { m_screen_w = w; m_screen_h = h; }
     /** Render thread: the palette of the frame being drawn (256 RGBA8
      *  entries), used for flat palette colours so they change on the same
@@ -81,16 +85,12 @@ public:
      *  develop's UpdateSlabTexture()/FlushPendingInit() split. */
     void UpdateSlabTexture(const unsigned char* data, int dim) override;
 
-    /** Renderer-owned minimap pixel buffer + GPU texture upload/draw --
-     *  bypasses the normal per-command IR (bulk raster data, same shape as
-     *  the slab texture above), and draws its own quad directly from
-     *  DrawGameUILayerRT() rather than through AppendQuadsFromIR()/m_quads,
-     *  so it always composites on top of the panel-background sprites GameUI
-     *  already flushed this frame (see BackendCapabilities::
-     *  compositesMinimapBackground). */
-    uint8_t* AcquireMinimapBuffer(int screen_x, int screen_y, int size) override;
+    /** Renderer-owned minimap buffer + GPU texture upload/draw. The shader
+     *  applies colour-table rows to a capture of the background at the
+     *  minimap's position in submission order. */
+    uint16_t* AcquireMinimapBuffer(int size) override;
     void SubmitMinimap(int screen_x, int screen_y, int size,
-                       const int32_t* shape_start, const int32_t* shape_end) override;
+                       const uint8_t* colours, int colour_count) override;
 
     void DrawGlyphQuad(SpriteHandle glyph, float x, float y, int units_per_px,
                        float r, float g, float b, float a, bool sample_palette = true,
@@ -110,6 +110,7 @@ private:
     GLResourceMapper* m_resource_mapper = nullptr;
     GpuResourceHandle m_palette_tex_handle = kInvalidGpuResource;
     GpuResourceHandle m_fade_table_tex_handle = kInvalidGpuResource;
+    GpuResourceHandle m_palette_index_tex_handle = kInvalidGpuResource;
     GpuResourceHandle m_clut_tex_handle = kInvalidGpuResource;
     static constexpr int k_clut_rows = 128;
     int m_clut_used = 1;
@@ -124,6 +125,7 @@ private:
     GpuResourceHandle m_shader_remap_handle          = kInvalidGpuResource;
     GpuResourceHandle m_shader_clut_handle            = kInvalidGpuResource;
     GpuResourceHandle m_shader_solid_handle          = kInvalidGpuResource;
+    GpuResourceHandle m_shader_minimap_handle        = kInvalidGpuResource;
     // Single-quad immediate path (text glyphs, cursor). One GpuGeometryBuffer
     // handle bundles the VAO+VBO pair the mapper realizes together.
     GpuResourceHandle m_geom_handle = kInvalidGpuResource;
@@ -214,11 +216,15 @@ private:
     // thread is still uploading the one it just recorded. Matches the one-
     // frame-of-overlap PresentFrame()'s WaitForCompletion() already bounds
     // for every other GT->RT handoff on this branch.
-    std::vector<uint8_t> m_minimap_cpu_buf[2];
+    std::vector<uint16_t> m_minimap_cpu_buf[2];
+    std::vector<uint8_t> m_minimap_colours[2];
     int m_minimap_cpu_size = 0;   // GT: current buffer side length (both slots)
     int m_minimap_write_idx = 0;  // GT: slot AcquireMinimapBuffer() currently hands out
     GpuResourceHandle m_minimap_tex_handle = kInvalidGpuResource;
+    GpuResourceHandle m_minimap_colours_tex_handle = kInvalidGpuResource;
+    GpuResourceHandle m_minimap_background_tex_handle = kInvalidGpuResource;
     int m_minimap_tex_size = 0; // RT: currently-allocated texture side length, 0 = none yet
+    int m_minimap_colour_count = 0;
 
     /** RT: uploads buffer `slot` into the minimap texture. */
     bool UploadMinimap(int slot, int size);

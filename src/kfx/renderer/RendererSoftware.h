@@ -21,7 +21,6 @@ public:
     void SetDisplayPalette(const unsigned char* pal6) override;
     void ClearScreen(unsigned char colour) override;
     void PresentFrame() override;
-    BackendCapabilities GetCapabilities() const override { return BackendCapabilities{ 0 }; }
     bool BeginFrame() override;
     void EndFrame() override;
     bool CanDraw() const override;
