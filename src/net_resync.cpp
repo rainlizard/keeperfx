@@ -38,6 +38,7 @@
 #include "net_spectator.h"
 #include "ariadne_update.h"
 #include "keeperfx.hpp"
+#include <SDL3/SDL.h>
 #include "post_inc.h"
 
 #ifdef __cplusplus
@@ -72,6 +73,9 @@ static struct Boing boing;
 TbBool detailed_multiplayer_logging = false;
 
 #define RESYNC_RECEIVE_TIMEOUT_MS 30000
+#define RESYNC_MAX_CHUNKS 16
+#define RESYNC_MIN_CHUNK_SIZE (1024 * 1024)
+#define RESYNC_DEFLATE_MEM_LEVEL 8
 
 struct ResyncHeader {
     unsigned char message_type;
@@ -79,6 +83,16 @@ struct ResyncHeader {
     uint32_t original_length;
     uint32_t data_checksum;
     uint32_t gameplay_generation;
+};
+
+struct ResyncChunk {
+    Bytef *original;
+    uInt original_length;
+    Bytef *packed;
+    uInt packed_length;
+    uLong crc;
+    int flush;
+    TbBool compressed;
 };
 
 // function to intentionally desync the game state for testing purposes
@@ -167,7 +181,37 @@ void recall_localised_game_structure(void)
     game.active_messages_count = boing.active_messages_count;
 }
 
-// resync message: ResyncHeader, then the zlib-compressed data
+static int compress_resync_chunk(void *data)
+{
+    ResyncChunk *chunk = (ResyncChunk *)data;
+    z_stream stream = {};
+    stream.next_in = chunk->original;
+    stream.avail_in = chunk->original_length;
+    stream.next_out = chunk->packed;
+    stream.avail_out = chunk->packed_length;
+    chunk->compressed = deflateInit2(&stream, Z_BEST_SPEED, Z_DEFLATED, -MAX_WBITS, RESYNC_DEFLATE_MEM_LEVEL, Z_DEFAULT_STRATEGY) == Z_OK
+        && deflate(&stream, chunk->flush) != Z_STREAM_ERROR && stream.avail_in == 0 && stream.avail_out != 0;
+    chunk->packed_length = stream.total_out;
+    deflateEnd(&stream);
+    chunk->crc = crc32(0L, chunk->original, chunk->original_length);
+    return 0;
+}
+
+static void compress_resync_chunks(ResyncChunk *chunks, int32_t chunk_count)
+{
+    SDL_Thread *threads[RESYNC_MAX_CHUNKS] = {0};
+    for (int32_t i = 1; i < chunk_count; i++) {
+        threads[i] = SDL_CreateThread(compress_resync_chunk, "resync_chunk", &chunks[i]);
+    }
+    compress_resync_chunk(&chunks[0]);
+    for (int32_t i = 1; i < chunk_count; i++) {
+        if (threads[i] == NULL) {
+            compress_resync_chunk(&chunks[i]);
+        }
+        SDL_WaitThread(threads[i], NULL);
+    }
+}
+
 static char *encode_resync_message(const void * buffer, size_t total_length, size_t *message_size)
 {
     TbClockMSec start_time = LbTimerClock();
@@ -176,46 +220,76 @@ static char *encode_resync_message(const void * buffer, size_t total_length, siz
         return NULL;
     }
 
-    uLongf compressed_size = compressBound(total_length);
-    if (compressed_size > UINT32_MAX - sizeof(ResyncHeader)) {
+    int32_t chunk_count = SDL_GetNumLogicalCPUCores();
+    if (chunk_count > (int32_t)(total_length / RESYNC_MIN_CHUNK_SIZE) + 1) {
+        chunk_count = (int32_t)(total_length / RESYNC_MIN_CHUNK_SIZE) + 1;
+    }
+    if (chunk_count > RESYNC_MAX_CHUNKS) {
+        chunk_count = RESYNC_MAX_CHUNKS;
+    }
+    ResyncChunk chunks[RESYNC_MAX_CHUNKS] = {};
+    size_t chunk_size = total_length / chunk_count;
+    size_t message_capacity = sizeof(ResyncHeader);
+    for (int32_t i = 0; i < chunk_count; i++) {
+        chunks[i].original = (Bytef *)buffer + i * chunk_size;
+        chunks[i].original_length = chunk_size;
+        chunks[i].flush = Z_SYNC_FLUSH;
+        if (i == chunk_count - 1) {
+            chunks[i].original_length = total_length - i * chunk_size;
+            chunks[i].flush = Z_FINISH;
+        }
+        chunks[i].packed_length = compressBound(chunks[i].original_length);
+        message_capacity += chunks[i].packed_length;
+    }
+    if (message_capacity > UINT32_MAX) {
         ERRORLOG("Compressed resync data too large");
         return NULL;
     }
 
-    char * message_buffer = (char *) malloc(sizeof(ResyncHeader) + compressed_size);
+    char * message_buffer = (char *) malloc(message_capacity);
     if (message_buffer == NULL) {
         ERRORLOG("Failed to allocate message buffer");
         return NULL;
     }
-
-    int compress_result = compress2((Bytef *)(message_buffer + sizeof(ResyncHeader)), &compressed_size, (const Bytef *)buffer, total_length, Z_BEST_SPEED);
-    if (compress_result != Z_OK) {
-        ERRORLOG("Compression failed: zlib error %d", compress_result);
-        free(message_buffer);
-        return NULL;
+    Bytef *compressed_data = (Bytef *)(message_buffer + sizeof(ResyncHeader));
+    Bytef *write_pos = compressed_data;
+    for (int32_t i = 0; i < chunk_count; i++) {
+        chunks[i].packed = write_pos;
+        write_pos += chunks[i].packed_length;
     }
 
+    compress_resync_chunks(chunks, chunk_count);
     uLong data_crc = crc32(0L, Z_NULL, 0);
-    data_crc = crc32(data_crc, (const Bytef *)buffer, total_length);
-    NETLOG("Compression successful: %u -> %u bytes in %u ms", (uint32_t)total_length, (uint32_t)compressed_size, (uint32_t)(LbTimerClock() - start_time));
+    write_pos = compressed_data;
+    for (int32_t i = 0; i < chunk_count; i++) {
+        if (!chunks[i].compressed) {
+            ERRORLOG("Compression of resync chunk %d failed", i);
+            free(message_buffer);
+            return NULL;
+        }
+        memmove(write_pos, chunks[i].packed, chunks[i].packed_length);
+        write_pos += chunks[i].packed_length;
+        data_crc = crc32_combine(data_crc, chunks[i].crc, chunks[i].original_length);
+    }
+    *message_size = (char *)write_pos - message_buffer;
+    NETLOG("Compression successful: %u -> %u bytes in %u ms on %d threads", (uint32_t)total_length, (uint32_t)*message_size, (uint32_t)(LbTimerClock() - start_time), chunk_count);
 
     ResyncHeader header;
     memset(&header, 0, sizeof(header));
     header.message_type = NETMSG_RESYNC_DATA;
-    header.compressed_length = (uint32_t)compressed_size;
+    header.compressed_length = (uint32_t)(*message_size - sizeof(ResyncHeader));
     header.original_length = (uint32_t)total_length;
     header.data_checksum = (uint32_t)data_crc;
     header.gameplay_generation = netstate.gameplay_generation;
     memcpy(message_buffer, &header, sizeof(ResyncHeader));
-    *message_size = sizeof(ResyncHeader) + compressed_size;
     return message_buffer;
 }
 
-static void send_resync_message(const char * message_buffer, size_t message_size)
+static void send_resync_message(const char * message_buffer, size_t message_size, uint64_t recipients)
 {
-    NETLOG("Host: Sending resync data to all clients");
+    NETLOG("Host: Sending resync data");
     for (NetUserId user_index = 0; user_index < MAX_NET_CONNECTIONS; ++user_index) {
-        if (user_index == SERVER_ID || netstate.users[user_index].progress != USER_LOGGEDIN || (user_index >= MAX_NET_USERS && netstate.users[user_index].spectator_state != NetSpectator_Streaming)) {
+        if ((recipients & (UINT64_C(1) << user_index)) == 0 || user_index == SERVER_ID || netstate.users[user_index].progress != USER_LOGGEDIN) {
             continue;
         }
         netstate.sp->sendmsg_single(netstate.users[user_index].id, message_buffer, message_size);
@@ -229,7 +303,7 @@ static TbBool send_resync_data(const void * buffer, size_t total_length)
     if (message_buffer == NULL) {
         return false;
     }
-    send_resync_message(message_buffer, message_size);
+    send_resync_message(message_buffer, message_size, ALL_NET_USERS_MASK | network_spectators);
     free(message_buffer);
     return true;
 }
@@ -269,12 +343,19 @@ static TbBool decode_resync_message(const char * message_buffer, size_t message_
         return false;
     }
 
-    uLongf dest_len = output_size;
-    int uncompress_result = uncompress((Bytef *)output_buffer, &dest_len,
-        (const Bytef *)(message_buffer + sizeof(ResyncHeader)), header.compressed_length);
-    if (uncompress_result != Z_OK || dest_len != header.original_length) {
+    z_stream stream = {};
+    stream.next_in = (Bytef *)(message_buffer + sizeof(ResyncHeader));
+    stream.avail_in = header.compressed_length;
+    stream.next_out = (Bytef *)output_buffer;
+    stream.avail_out = header.original_length;
+    int inflate_result = inflateInit2(&stream, -MAX_WBITS);
+    if (inflate_result == Z_OK) {
+        inflate_result = inflate(&stream, Z_FINISH);
+    }
+    inflateEnd(&stream);
+    if (inflate_result != Z_STREAM_END || stream.total_out != header.original_length) {
         ERRORLOG("Decompression failed: zlib error %d, expected %u bytes, got %u bytes",
-            uncompress_result, header.original_length, (uint32_t)dest_len);
+            inflate_result, header.original_length, (uint32_t)stream.total_out);
         free(output_buffer);
         return false;
     }
@@ -516,7 +597,7 @@ TbBool send_spectator_resync(uint64_t user_mask)
     if (message_buffer == NULL) {
         return false;
     }
-    send_to_active_peers(1, NetSend_Reliable, message_buffer, message_size, user_mask);
+    send_resync_message(message_buffer, message_size, user_mask);
     free(message_buffer);
     return true;
 }
@@ -536,7 +617,7 @@ TbBool send_resync_game(void)
         netstate.gameplay_generation -= 1;
         return false;
     }
-    send_resync_message(message_buffer, message_size);
+    send_resync_message(message_buffer, message_size, ALL_NET_USERS_MASK | network_spectators);
     replay_record_resync(message_buffer, message_size);
     free(message_buffer);
     animate_resync_progress_bar(90, 100);

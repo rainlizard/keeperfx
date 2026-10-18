@@ -16,6 +16,7 @@ extern TbBool network_spectator_desynced;
 extern TbBool network_spectator_resync_pending;
 extern TbBool network_spectator_chat_visible;
 extern int32_t network_spectator_turn_count;
+extern uint64_t network_spectators;
 void network_spectator_send_bootstrap(NetUserId user_id);
 TbBool network_spectator_wait(enum NetMessageType message_type);
 TbBool network_spectator_start(void);

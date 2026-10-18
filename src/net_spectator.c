@@ -51,7 +51,7 @@ int32_t network_spectator_turn_count;
 static struct SpectatorTurn spectator_send_turn;
 static int32_t spectator_send_turn_pending;
 TbBool network_spectator_desynced;
-static uint64_t network_spectators;
+uint64_t network_spectators;
 TbBool network_spectator_resync_pending;
 TbBool network_spectator_chat_visible;
 
@@ -389,18 +389,16 @@ void network_spectator_send_snapshots(void)
             resync_recipients |= UINT64_C(1) << id;
         }
     }
-    if (resync_recipients == 0) {
+    if (resync_recipients == 0 || !send_spectator_resync(resync_recipients)) {
         return;
     }
-    if (send_spectator_resync(resync_recipients)) {
-        for (NetUserId id = MAX_NET_USERS; id < MAX_NET_CONNECTIONS; id++) {
-            if (resync_recipients & (UINT64_C(1) << id)) {
-                netstate.users[id].spectator_state = NetSpectator_Streaming;
-                network_spectator_notify(id, true);
-            }
+    for (NetUserId id = MAX_NET_USERS; id < MAX_NET_CONNECTIONS; id++) {
+        if (resync_recipients & (UINT64_C(1) << id)) {
+            netstate.users[id].spectator_state = NetSpectator_Streaming;
+            network_spectator_notify(id, true);
         }
-        network_spectator_update_roles();
     }
+    network_spectator_update_roles();
 }
 
 void network_spectator_receive_turns(void *server_buf, size_t frame_size)

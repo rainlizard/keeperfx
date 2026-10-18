@@ -856,6 +856,8 @@ namespace
             ERRORLOG("Failed to allocate reliable network packet");
             return;
         }
+        bool spectator_peer = client_peer == nullptr && destination >= MAX_NET_USERS;
+        bool resync_packet = size > ENET_PROTOCOL_MAXIMUM_WINDOW_SIZE && buffer[0] == NETMSG_RESYNC_DATA;
         for (size_t peer_index = 0; peer_index < host->peerCount; peer_index++) {
             ENetPeer *peer = &host->peers[peer_index];
             if (peer->state != ENET_PEER_STATE_CONNECTED) {
@@ -867,7 +869,7 @@ namespace
             if (client_peer == nullptr && NetUserId(reinterpret_cast<ptrdiff_t>(peer->data)) != destination) {
                 continue;
             }
-            if (client_peer == nullptr && destination >= MAX_NET_USERS) {
+            if (spectator_peer) {
                 size_t *queued = &spectator_outgoing_bytes[destination];
                 if (*queued + size > 16 * 1024 * 1024) {
                     enet_packet_destroy(packet);
@@ -885,7 +887,7 @@ namespace
                 ERRORLOG("Failed to queue reliable network packet for user %d", destination);
                 break;
             }
-            if (size > ENET_PROTOCOL_MAXIMUM_WINDOW_SIZE && buffer[0] == NETMSG_RESYNC_DATA && peer->windowSize < RESYNC_WINDOW_SIZE) {
+            if (resync_packet && peer->windowSize < RESYNC_WINDOW_SIZE) {
                 if (resync_saved_window[peer_index] == 0) {
                     resync_saved_window[peer_index] = peer->windowSize;
                 }
@@ -896,7 +898,7 @@ namespace
         if (packet->referenceCount == 0) {
             enet_packet_destroy(packet);
         }
-        if (client_peer || destination < MAX_NET_USERS) {
+        if (!spectator_peer || resync_packet) {
             enet_host_flush(host);
         }
     }
