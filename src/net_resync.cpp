@@ -74,6 +74,7 @@ TbBool detailed_multiplayer_logging = false;
 
 #define RESYNC_RECEIVE_TIMEOUT_MS 30000
 #define RESYNC_MAX_CHUNKS 16
+#define RESYNC_MAX_PIECES 2
 #define RESYNC_MIN_CHUNK_SIZE (1024 * 1024)
 #define RESYNC_DEFLATE_MEM_LEVEL 8
 
@@ -83,6 +84,11 @@ struct ResyncHeader {
     uint32_t original_length;
     uint32_t data_checksum;
     uint32_t gameplay_generation;
+};
+
+struct ResyncPiece {
+    const void *data;
+    size_t length;
 };
 
 struct ResyncChunk {
@@ -199,7 +205,7 @@ static int compress_resync_chunk(void *data)
 
 static void compress_resync_chunks(ResyncChunk *chunks, int32_t chunk_count)
 {
-    SDL_Thread *threads[RESYNC_MAX_CHUNKS] = {0};
+    SDL_Thread *threads[RESYNC_MAX_CHUNKS + RESYNC_MAX_PIECES] = {0};
     for (int32_t i = 1; i < chunk_count; i++) {
         threads[i] = SDL_CreateThread(compress_resync_chunk, "resync_chunk", &chunks[i]);
     }
@@ -212,9 +218,13 @@ static void compress_resync_chunks(ResyncChunk *chunks, int32_t chunk_count)
     }
 }
 
-static char *encode_resync_message(const void * buffer, size_t total_length, size_t *message_size)
+static char *encode_resync_message(const ResyncPiece *pieces, int32_t piece_count, size_t *message_size)
 {
     TbClockMSec start_time = LbTimerClock();
+    size_t total_length = 0;
+    for (int32_t p = 0; p < piece_count; p++) {
+        total_length += pieces[p].length;
+    }
     if (total_length > UINT32_MAX) {
         ERRORLOG("Resync data too large");
         return NULL;
@@ -227,20 +237,29 @@ static char *encode_resync_message(const void * buffer, size_t total_length, siz
     if (chunk_count > RESYNC_MAX_CHUNKS) {
         chunk_count = RESYNC_MAX_CHUNKS;
     }
-    ResyncChunk chunks[RESYNC_MAX_CHUNKS] = {};
-    size_t chunk_size = total_length / chunk_count;
+    ResyncChunk chunks[RESYNC_MAX_CHUNKS + RESYNC_MAX_PIECES] = {};
+    size_t chunk_size = total_length / chunk_count + 1;
     size_t message_capacity = sizeof(ResyncHeader);
-    for (int32_t i = 0; i < chunk_count; i++) {
-        chunks[i].original = (Bytef *)buffer + i * chunk_size;
-        chunks[i].original_length = chunk_size;
-        chunks[i].flush = Z_SYNC_FLUSH;
-        if (i == chunk_count - 1) {
-            chunks[i].original_length = total_length - i * chunk_size;
-            chunks[i].flush = Z_FINISH;
+    chunk_count = 0;
+    for (int32_t p = 0; p < piece_count; p++) {
+        int32_t piece_chunks = (int32_t)(pieces[p].length / chunk_size);
+        if (piece_chunks < 1) {
+            piece_chunks = 1;
         }
-        chunks[i].packed_length = compressBound(chunks[i].original_length);
-        message_capacity += chunks[i].packed_length;
+        size_t piece_chunk_size = pieces[p].length / piece_chunks;
+        for (int32_t c = 0; c < piece_chunks; c++) {
+            ResyncChunk *chunk = &chunks[chunk_count++];
+            chunk->original = (Bytef *)pieces[p].data + c * piece_chunk_size;
+            chunk->original_length = piece_chunk_size;
+            if (c == piece_chunks - 1) {
+                chunk->original_length = pieces[p].length - c * piece_chunk_size;
+            }
+            chunk->flush = Z_SYNC_FLUSH;
+            chunk->packed_length = compressBound(chunk->original_length);
+            message_capacity += chunk->packed_length;
+        }
     }
+    chunks[chunk_count - 1].flush = Z_FINISH;
     if (message_capacity > UINT32_MAX) {
         ERRORLOG("Compressed resync data too large");
         return NULL;
@@ -299,7 +318,8 @@ static void send_resync_message(const char * message_buffer, size_t message_size
 static TbBool send_resync_data(const void * buffer, size_t total_length)
 {
     size_t message_size;
-    char * message_buffer = encode_resync_message(buffer, total_length, &message_size);
+    ResyncPiece piece = {buffer, total_length};
+    char * message_buffer = encode_resync_message(&piece, 1, &message_size);
     if (message_buffer == NULL) {
         return false;
     }
@@ -488,7 +508,7 @@ TbBool LbNetwork_Resync(void * data_buffer, size_t buffer_length)
     return true;
 }
 
-static char *build_resync_game_data(size_t *full_resync_len)
+static char *build_resync_game_tail(size_t *tail_len)
 {
     TbClockMSec start_time = LbTimerClock();
     char *lua_data = NULL;
@@ -500,34 +520,33 @@ static char *build_resync_game_data(size_t *full_resync_len)
         }
     }
     TbClockMSec lua_time = LbTimerClock();
-    size_t lua_data_offset = sizeof(game) + sizeof(uint32_t);
+    size_t lua_data_offset = sizeof(uint32_t);
     size_t navigation_size = transfer_navigation_state(NULL, NavigationState_Store);
-    if (lua_data_len > UINT32_MAX - lua_data_offset - navigation_size) {
+    if (lua_data_len > UINT32_MAX - sizeof(game) - lua_data_offset - navigation_size) {
         ERRORLOG("Full resync data too large");
         free(lua_data);
         return NULL;
     }
 
-    *full_resync_len = lua_data_offset + lua_data_len + navigation_size;
-    char * full_resync_data = (char *) malloc(*full_resync_len);
-    if (full_resync_data == NULL) {
-        ERRORLOG("Failed to allocate full resync buffer");
+    *tail_len = lua_data_offset + lua_data_len + navigation_size;
+    char * tail_data = (char *) malloc(*tail_len);
+    if (tail_data == NULL) {
+        ERRORLOG("Failed to allocate resync tail buffer");
         free(lua_data);
         return NULL;
     }
 
     uint32_t lua_data_len32 = (uint32_t)lua_data_len;
-    memcpy(full_resync_data, &game, sizeof(game));
-    memcpy(full_resync_data + sizeof(game), &lua_data_len32, sizeof(lua_data_len32));
+    memcpy(tail_data, &lua_data_len32, sizeof(lua_data_len32));
     if (lua_data_len > 0) {
-        memcpy(full_resync_data + lua_data_offset, lua_data, lua_data_len);
+        memcpy(tail_data + lua_data_offset, lua_data, lua_data_len);
     }
-    transfer_navigation_state(full_resync_data + lua_data_offset + lua_data_len, NavigationState_Store);
+    transfer_navigation_state(tail_data + lua_data_offset + lua_data_len, NavigationState_Store);
     free(lua_data);
-    NETLOG("Resync data built: %u bytes (lua %u, navigation %u) in %u ms (lua %u ms, copy %u ms)",
-        (uint32_t)*full_resync_len, (uint32_t)lua_data_len, (uint32_t)navigation_size,
+    NETLOG("Resync tail built: %u bytes (lua %u, navigation %u) in %u ms (lua %u ms, navigation %u ms)",
+        (uint32_t)*tail_len, (uint32_t)lua_data_len, (uint32_t)navigation_size,
         (uint32_t)(LbTimerClock() - start_time), (uint32_t)(lua_time - start_time), (uint32_t)(LbTimerClock() - lua_time));
-    return full_resync_data;
+    return tail_data;
 }
 
 static TbBool apply_resync_game_data(const char * full_resync_data, size_t full_resync_len)
@@ -585,13 +604,14 @@ static TbBool apply_resync_game_message(const char * message_buffer, size_t mess
 
 static char *create_resync_game_message(size_t *message_size)
 {
-    size_t full_resync_len = 0;
-    char * full_resync_data = build_resync_game_data(&full_resync_len);
-    if (full_resync_data == NULL) {
+    size_t tail_len = 0;
+    char *tail_data = build_resync_game_tail(&tail_len);
+    if (tail_data == NULL) {
         return NULL;
     }
-    char *message_buffer = encode_resync_message(full_resync_data, full_resync_len, message_size);
-    free(full_resync_data);
+    ResyncPiece pieces[RESYNC_MAX_PIECES] = {{&game, sizeof(game)}, {tail_data, tail_len}};
+    char *message_buffer = encode_resync_message(pieces, RESYNC_MAX_PIECES, message_size);
+    free(tail_data);
     return message_buffer;
 }
 
