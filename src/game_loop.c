@@ -82,9 +82,6 @@ static short do_draw;
 #define REWIND_TURNS_PER_SECOND 60
 static int64_t next_rewind_step_ns;
 static long double average_frame_draw_time = 1;
-#define LONG_NETWORK_FRAME_MS 50
-static TbClockMSec frame_exchange_ms;
-static TbClockMSec frame_update_ms;
 
 float interpolate_time = 0;
 
@@ -615,10 +612,7 @@ static void gameplay_loop_logic()
     }
     input_eastegg();
     input();
-    TbClockMSec exchange_start = LbTimerClock();
-    TbBool exchange_wait = exchange_packets() == PExR_Wait;
-    frame_exchange_ms += LbTimerClock() - exchange_start;
-    if (exchange_wait) {
+    if (exchange_packets() == PExR_Wait) {
         return;
     }
     frametime_start_measurement(Frametime_Logic);
@@ -672,9 +666,7 @@ static void gameplay_loop_logic()
     }
     local_state.process_turn_time -= 1.0;
 
-    TbClockMSec update_start = LbTimerClock();
     update();
-    frame_update_ms += LbTimerClock() - update_start;
 
     frametime_end_measurement(Frametime_Logic);
 
@@ -766,21 +758,9 @@ static void keeper_gameplay_loop(void)
         frametime_start_measurement(Frametime_FullFrame);
         if (frametime_enabled())
             framerate_measurement_capture(Framerate_FullFrame);
-        frame_exchange_ms = 0;
-        frame_update_ms = 0;
-        TbClockMSec frame_start = LbTimerClock();
         gameplay_loop_logic();
-        TbClockMSec logic_end = LbTimerClock();
         gameplay_loop_draw();
-        TbClockMSec draw_end = LbTimerClock();
         gameplay_loop_network();
-        TbClockMSec network_end = LbTimerClock();
-        if (network_is_active() && network_end - frame_start >= LONG_NETWORK_FRAME_MS) {
-            NETLOG("Long frame: %u ms (logic %u ms: packet exchange %u ms, update %u ms; draw %u ms; network %u ms)",
-                (uint32_t)(network_end - frame_start), (uint32_t)(logic_end - frame_start),
-                (uint32_t)frame_exchange_ms, (uint32_t)frame_update_ms,
-                (uint32_t)(draw_end - logic_end), (uint32_t)(network_end - draw_end));
-        }
         gameplay_loop_timestep();
 
         frametime_end_measurement(Frametime_FullFrame);
