@@ -490,6 +490,7 @@ TbBool LbNetwork_Resync(void * data_buffer, size_t buffer_length)
 
 static char *build_resync_game_data(size_t *full_resync_len)
 {
+    TbClockMSec start_time = LbTimerClock();
     char *lua_data = NULL;
     size_t lua_data_len = 0;
     if (Lvl_script != NULL) {
@@ -498,6 +499,7 @@ static char *build_resync_game_data(size_t *full_resync_len)
             return NULL;
         }
     }
+    TbClockMSec lua_time = LbTimerClock();
     size_t lua_data_offset = sizeof(game) + sizeof(uint32_t);
     size_t navigation_size = transfer_navigation_state(NULL, NavigationState_Store);
     if (lua_data_len > UINT32_MAX - lua_data_offset - navigation_size) {
@@ -522,6 +524,9 @@ static char *build_resync_game_data(size_t *full_resync_len)
     }
     transfer_navigation_state(full_resync_data + lua_data_offset + lua_data_len, NavigationState_Store);
     free(lua_data);
+    NETLOG("Resync data built: %u bytes (lua %u, navigation %u) in %u ms (lua %u ms, copy %u ms)",
+        (uint32_t)*full_resync_len, (uint32_t)lua_data_len, (uint32_t)navigation_size,
+        (uint32_t)(LbTimerClock() - start_time), (uint32_t)(lua_time - start_time), (uint32_t)(LbTimerClock() - lua_time));
     return full_resync_data;
 }
 
@@ -592,13 +597,17 @@ static char *create_resync_game_message(size_t *message_size)
 
 TbBool send_spectator_resync(uint64_t user_mask)
 {
+    TbClockMSec start_time = LbTimerClock();
     size_t message_size = 0;
     char *message_buffer = create_resync_game_message(&message_size);
     if (message_buffer == NULL) {
         return false;
     }
+    TbClockMSec encode_time = LbTimerClock();
     send_resync_message(message_buffer, message_size, user_mask);
     free(message_buffer);
+    NETLOG("Spectator snapshot sent to mask 0x%" PRIx64 " in %u ms (build and compress %u ms, send %u ms)",
+        user_mask, (uint32_t)(LbTimerClock() - start_time), (uint32_t)(encode_time - start_time), (uint32_t)(LbTimerClock() - encode_time));
     return true;
 }
 
