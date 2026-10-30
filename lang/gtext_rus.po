@@ -6962,3 +6962,9 @@ msgstr "Разрешить читы"
 msgctxt "Network game interface"
 msgid "Allow computer assistant"
 msgstr "Разрешить ИИ-помощь"
+
+#: guitext:1166
+#, fuzzy
+msgctxt "In-game interface description"
+msgid "Click to unpause"
+msgstr "Нажмите, чтобы продолжить"

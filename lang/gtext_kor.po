@@ -7613,3 +7613,9 @@ msgstr "치트 허용"
 msgctxt "Network game interface"
 msgid "Allow computer assistant"
 msgstr "컴퓨터 보조 허용"
+
+#: guitext:1166
+#, fuzzy
+msgctxt "In-game interface description"
+msgid "Click to unpause"
+msgstr "클릭하여 계속"

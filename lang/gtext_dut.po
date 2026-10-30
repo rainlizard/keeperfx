@@ -7543,3 +7543,9 @@ msgstr "Cheats toestaan"
 msgctxt "Network game interface"
 msgid "Allow computer assistant"
 msgstr "Computerhulp toestaan"
+
+#: guitext:1166
+#, fuzzy
+msgctxt "In-game interface description"
+msgid "Click to unpause"
+msgstr "Klik om verder te spelen"

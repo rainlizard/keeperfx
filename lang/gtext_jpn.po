@@ -7562,3 +7562,9 @@ msgstr "チートを許可"
 msgctxt "Network game interface"
 msgid "Allow computer assistant"
 msgstr "CPU補助を許可"
+
+#: guitext:1166
+#, fuzzy
+msgctxt "In-game interface description"
+msgid "Click to unpause"
+msgstr "クリックで再開"

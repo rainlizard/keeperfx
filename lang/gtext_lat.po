@@ -7627,3 +7627,9 @@ msgstr "Fraudes permittere"
 msgctxt "Network game interface"
 msgid "Allow computer assistant"
 msgstr "Adiumentum sinere"
+
+#: guitext:1166
+#, fuzzy
+msgctxt "In-game interface description"
+msgid "Click to unpause"
+msgstr "Preme ut pergas"

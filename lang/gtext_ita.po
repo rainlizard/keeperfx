@@ -7729,3 +7729,9 @@ msgstr "Consenti trucchi"
 msgctxt "Network game interface"
 msgid "Allow computer assistant"
 msgstr "Consenti assistente"
+
+#: guitext:1166
+#, fuzzy
+msgctxt "In-game interface description"
+msgid "Click to unpause"
+msgstr "Clicca per riprendere"

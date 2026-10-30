@@ -7223,3 +7223,9 @@ msgstr "允許作弊"
 msgctxt "Network game interface"
 msgid "Allow computer assistant"
 msgstr "允許電腦輔助"
+
+#: guitext:1166
+#, fuzzy
+msgctxt "In-game interface description"
+msgid "Click to unpause"
+msgstr "點擊以取消暫停"

@@ -7859,3 +7859,9 @@ msgstr "Permitir trucos"
 msgctxt "Network game interface"
 msgid "Allow computer assistant"
 msgstr "Permitir asistente"
+
+#: guitext:1166
+#, fuzzy
+msgctxt "In-game interface description"
+msgid "Click to unpause"
+msgstr "Haz clic para reanudar"

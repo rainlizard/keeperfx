@@ -7880,3 +7880,9 @@ msgstr "Cheats erlauben"
 msgctxt "Network game interface"
 msgid "Allow computer assistant"
 msgstr "Computer-Hilfe erlauben"
+
+#: guitext:1166
+#, fuzzy
+msgctxt "In-game interface description"
+msgid "Click to unpause"
+msgstr "Klicken zum Fortsetzen"
